@@ -75,6 +75,27 @@
   .selbox .ok{font-size:12px; font-weight:700; color:var(--accent2); white-space:nowrap}
   .row-consultar{margin-top:14px}
   #btnCoords{min-width:180px; padding:12px 22px}
+  /* Clima en ruta */
+  .ruta-form{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end}
+  .ruta-form .field{flex:1; min-width:150px}
+  .ruta-stops{margin-top:14px; display:flex; flex-direction:column; gap:10px}
+  .rstop{
+    display:flex; align-items:center; gap:14px;
+    background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px;
+  }
+  .rstop .rtime{font-size:15px; font-weight:800; color:var(--accent2); min-width:52px; text-align:center}
+  .rstop .rico{font-size:30px}
+  .rstop .rinfo{flex:1; min-width:0}
+  .rstop .rname{font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .rstop .rcond{font-size:12px; color:var(--muted)}
+  .rstop .rtemp{font-size:22px; font-weight:800; white-space:nowrap}
+  .ruta-resumen{
+    margin-top:12px; padding:12px 14px; border-radius:10px;
+    background:linear-gradient(90deg,#e6f6ff,#fff1e2); border:1.5px solid var(--accent2);
+    display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;
+  }
+  .ruta-resumen .rr-k{font-size:13px}
+  .ruta-resumen a{color:var(--accent2); font-weight:700; text-decoration:none; white-space:nowrap}
   .favs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
   .chip{
     background:var(--panel2); border:1px solid var(--border); color:var(--text);
@@ -284,6 +305,23 @@
         <tbody></tbody>
       </table>
     </div>
+  </div>
+
+  <!-- CLIMA EN RUTA -->
+  <div class="card">
+    <div class="section-h"><h2>🛣️ Clima en ruta</h2></div>
+    <div class="ruta-form">
+      <div class="field"><label>Origen</label>
+        <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off"></div>
+      <div class="field"><label>Destino</label>
+        <input id="rDestino" type="text" placeholder="Ej: San Rafael" autocomplete="off"></div>
+      <div class="field"><label>Salida</label>
+        <input id="rSalida" type="datetime-local"></div>
+      <button id="btnRuta">🧭 Calcular</button>
+    </div>
+    <div id="rutaStatus" class="status" style="margin-top:8px"></div>
+    <div id="rutaResumen" class="hidden"></div>
+    <div id="rutaStops" class="ruta-stops"></div>
   </div>
 
 </div>
@@ -610,6 +648,110 @@ function miUbicacion(){
   );
 }
 
+// ---------- Clima en ruta ----------
+const rutaStatus=(m,err=false)=>{ const s=$('rutaStatus'); s.textContent=m||''; s.className='status'+(err?' err':''); };
+const fmtDur=seg=>{ const h=Math.floor(seg/3600), m=Math.round((seg%3600)/60); return (h?h+'h ':'')+m+'min'; };
+async function geocodeUno(q){
+  const r=await geocodificar(q);
+  if(!r.length) return null;
+  return { name:r[0].name.split(',').slice(0,2).join(',').trim(), lat:r[0].lat, lon:r[0].lon };
+}
+async function reverseNombre(lat, lon){
+  const n=await reverseGeocode(lat, lon);
+  return n ? n.split(',').slice(0,2).join(',').trim() : lat.toFixed(2)+', '+lon.toFixed(2);
+}
+
+async function calcularRuta(){
+  const oq=$('rOrigen').value.trim(), dq=$('rDestino').value.trim();
+  $('rutaResumen').classList.add('hidden'); $('rutaStops').innerHTML='';
+  if(!oq||!dq){ rutaStatus('Completá origen y destino.',true); return; }
+  rutaStatus('Buscando origen y destino...');
+  const o=await geocodeUno(oq); const d=await geocodeUno(dq);
+  if(!o){ rutaStatus('No encontré el origen "'+oq+'".',true); return; }
+  if(!d){ rutaStatus('No encontré el destino "'+dq+'".',true); return; }
+
+  rutaStatus('Calculando la ruta...');
+  let route;
+  try{
+    const u=`https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=full&geometries=geojson&annotations=duration`;
+    const j=await (await fetch(u)).json();
+    if(j.code!=='Ok' || !j.routes || !j.routes.length){ rutaStatus('No se pudo calcular la ruta entre esos puntos.',true); return; }
+    route=j.routes[0];
+  }catch(e){ rutaStatus('Error al calcular la ruta (servicio de rutas).',true); return; }
+
+  const coords=route.geometry.coordinates;           // [lon,lat]
+  const dur=(route.legs[0].annotation&&route.legs[0].annotation.duration)||[];
+  const cum=[0]; for(let i=0;i<dur.length;i++) cum.push(cum[i]+dur[i]);
+  const total=cum[cum.length-1] || route.duration;
+  const totalKm=route.distance/1000;
+  const salida = $('rSalida').value ? new Date($('rSalida').value) : new Date();
+
+  // Puntos de muestreo a lo largo del trayecto (según tiempo)
+  const n=Math.min(8, Math.max(3, Math.round(total/3600)+1));
+  const puntos=[];
+  for(let k=0;k<n;k++){
+    const t=(total*k)/(n-1);
+    let idx=cum.findIndex(c=>c>=t); if(idx<0) idx=coords.length-1;
+    const [lon,lat]=coords[idx];
+    puntos.push({ lat, lon, seg:t, eta:new Date(salida.getTime()+t*1000) });
+  }
+
+  // Clima de todos los puntos en UNA sola consulta (Open-Meteo multi-ubicación, en UTC)
+  rutaStatus('Consultando el clima del trayecto...');
+  const lats=puntos.map(p=>p.lat.toFixed(4)).join(',');
+  const lons=puntos.map(p=>p.lon.toFixed(4)).join(',');
+  const horasHastaFin=(salida-new Date())/3600000 + total/3600;
+  const fdays=Math.min(16, Math.max(1, Math.ceil(horasHastaFin/24)+1));
+  let arr;
+  try{
+    const wu=`https://api.open-meteo.com/v1/forecast?latitude=${lats}&longitude=${lons}&hourly=temperature_2m,weather_code,precipitation,precipitation_probability&timezone=UTC&forecast_days=${fdays}`;
+    const wj=await (await fetch(wu)).json();
+    arr=Array.isArray(wj)?wj:[wj];
+  }catch(e){ rutaStatus('Error al consultar el clima.',true); return; }
+
+  // Nombres: origen/destino ya los tengo; los intermedios por reverse geocoding (con pausa por límite de OSM)
+  rutaStatus('Ubicando los puntos del trayecto...');
+  for(let i=0;i<puntos.length;i++){
+    if(i===0){ puntos[i].nombre=o.name; }
+    else if(i===puntos.length-1){ puntos[i].nombre=d.name; }
+    else { puntos[i].nombre=await reverseNombre(puntos[i].lat, puntos[i].lon); await new Promise(r=>setTimeout(r,1100)); }
+  }
+
+  // Emparejar clima por hora (UTC) de cada ETA
+  puntos.forEach((p,i)=>{
+    const h=arr[i]&&arr[i].hourly; if(!h){ return; }
+    const key=p.eta.toISOString().slice(0,13);       // "YYYY-MM-DDTHH"
+    let hi=h.time.findIndex(t=>t.slice(0,13)===key); if(hi<0) hi=0;
+    p.temp=Math.round(h.temperature_2m[hi]);
+    p.code=h.weather_code[hi];
+    p.precip=h.precipitation[hi];
+    p.prob=h.precipitation_probability[hi];
+  });
+
+  renderRuta(o,d,puntos,totalKm,total);
+  rutaStatus('');
+}
+
+function renderRuta(o,d,puntos,totalKm,total){
+  const gmaps=`https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${d.lat},${d.lon}&travelmode=driving`;
+  $('rutaResumen').className='ruta-resumen';
+  $('rutaResumen').innerHTML=
+    `<div class="rr-k">🚗 <b>${Math.round(totalKm)} km</b> · ⏱️ <b>${fmtDur(total)}</b></div>`+
+    `<a href="${gmaps}" target="_blank">🗺️ Ver ruta en Google Maps</a>`;
+  $('rutaStops').innerHTML=puntos.map(p=>{
+    const [desc,ico]=wmo(p.code);
+    const hora=p.eta.toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
+    const temp=(p.temp==null?'–':p.temp+'°');
+    const lluvia=(p.prob!=null&&p.prob>0)?` · 💧${p.prob}%`:'';
+    return `<div class="rstop">
+      <div class="rtime">${hora}</div>
+      <div class="rico">${ico}</div>
+      <div class="rinfo"><div class="rname">${p.nombre}</div><div class="rcond">${desc}${lluvia}</div></div>
+      <div class="rtemp">${temp}</div>
+    </div>`;
+  }).join('');
+}
+
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
@@ -621,6 +763,9 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+$('btnRuta').onclick=calcularRuta;
+// Hora de salida por defecto = ahora (formato datetime-local)
+(function(){ const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); $('rSalida').value=n.toISOString().slice(0,16); })();
 // Abrir la ubicación seleccionada en Google Maps
 $('selBox').onclick=()=>{
   const lat=$('lat').value, lon=$('lon').value;
