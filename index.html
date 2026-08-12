@@ -89,6 +89,17 @@
   .rstop .rname{font-size:15px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .rstop .rcond{font-size:12px; color:var(--muted)}
   .rstop .rtemp{font-size:22px; font-weight:800; white-space:nowrap}
+  .rstop.lluvia{border-left:5px solid var(--accent2); background:linear-gradient(90deg,#e6f3ff,var(--panel2))}
+  .rstop.tormenta{border-left:5px solid var(--danger); background:linear-gradient(90deg,#ffe9e9,var(--panel2))}
+  .rstop.nieve{border-left:5px solid #7cc0e8; background:linear-gradient(90deg,#eef7ff,var(--panel2))}
+  .rstop .badge{display:inline-block; font-size:11px; font-weight:800; padding:1px 8px; border-radius:999px; margin-left:6px; color:#fff}
+  .rstop.lluvia .badge{background:var(--accent2)}
+  .rstop.tormenta .badge{background:var(--danger)}
+  .rstop.nieve .badge{background:#4a97c9}
+  .linklike{background:transparent !important; border:none !important; box-shadow:none !important; color:var(--accent2) !important;
+    font-weight:700; font-size:12px; padding:4px 0 0 !important; cursor:pointer; align-self:flex-start}
+  .ruta-aviso{margin-top:10px; padding:10px 12px; border-radius:10px; font-weight:700; font-size:13px;
+    background:#fff3e0; border:1px solid var(--warn); color:#8a5a00}
   .ruta-resumen{
     margin-top:12px; padding:12px 14px; border-radius:10px;
     background:linear-gradient(90deg,#e6f6ff,#fff1e2); border:1.5px solid var(--accent2);
@@ -312,7 +323,8 @@
     <div class="section-h"><h2>🛣️ Clima en ruta</h2></div>
     <div class="ruta-form">
       <div class="field"><label>Origen</label>
-        <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off"></div>
+        <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off">
+        <button id="btnRutaGeo" class="linklike">📍 Usar mi ubicación</button></div>
       <div class="field"><label>Destino</label>
         <input id="rDestino" type="text" placeholder="Ej: San Rafael" autocomplete="off"></div>
       <div class="field"><label>Salida</label>
@@ -660,13 +672,41 @@ async function reverseNombre(lat, lon){
   const n=await reverseGeocode(lat, lon);
   return n ? n.split(',').slice(0,2).join(',').trim() : lat.toFixed(2)+', '+lon.toFixed(2);
 }
+let rutaOrigenCoords=null; // si se usa "mi ubicación", se guardan las coords exactas del origen
+
+// Obtiene la ubicación actual (GPS y si no, IP) → {name, lat, lon}
+function obtenerUbicacionActual(){
+  return new Promise(resolve=>{
+    const porIP=async()=>{
+      try{ const j=await (await fetch('https://ipwho.is/')).json();
+        if(j&&j.success&&j.latitude){ resolve({name:[j.city,j.region,j.country].filter(Boolean).join(', '), lat:j.latitude, lon:j.longitude}); return; }
+      }catch(e){}
+      resolve(null);
+    };
+    if(!navigator.geolocation){ porIP(); return; }
+    navigator.geolocation.getCurrentPosition(
+      async p=>{ const lat=p.coords.latitude, lon=p.coords.longitude; resolve({name:await reverseNombre(lat,lon), lat, lon}); },
+      ()=>porIP(),
+      { enableHighAccuracy:true, timeout:8000, maximumAge:60000 }
+    );
+  });
+}
+
+// Clasifica un código WMO como lluvia / tormenta / nieve (para resaltar tramos)
+function claseClima(code){
+  if(code>=95) return 'tormenta';
+  if((code>=51&&code<=67)||(code>=80&&code<=82)) return 'lluvia';
+  if((code>=71&&code<=77)||code===85||code===86) return 'nieve';
+  return '';
+}
 
 async function calcularRuta(){
   const oq=$('rOrigen').value.trim(), dq=$('rDestino').value.trim();
   $('rutaResumen').classList.add('hidden'); $('rutaStops').innerHTML='';
   if(!oq||!dq){ rutaStatus('Completá origen y destino.',true); return; }
   rutaStatus('Buscando origen y destino...');
-  const o=await geocodeUno(oq); const d=await geocodeUno(dq);
+  const o = rutaOrigenCoords || await geocodeUno(oq);
+  const d = await geocodeUno(dq);
   if(!o){ rutaStatus('No encontré el origen "'+oq+'".',true); return; }
   if(!d){ rutaStatus('No encontré el destino "'+dq+'".',true); return; }
 
@@ -738,18 +778,26 @@ function renderRuta(o,d,puntos,totalKm,total){
   $('rutaResumen').innerHTML=
     `<div class="rr-k">🚗 <b>${Math.round(totalKm)} km</b> · ⏱️ <b>${fmtDur(total)}</b></div>`+
     `<a href="${gmaps}" target="_blank">🗺️ Ver ruta en Google Maps</a>`;
-  $('rutaStops').innerHTML=puntos.map(p=>{
+
+  const BADGE={tormenta:'⛈️ Tormenta', lluvia:'🌧️ Lluvia', nieve:'🌨️ Nieve'};
+  let alertas=0;
+  const html=puntos.map(p=>{
     const [desc,ico]=wmo(p.code);
+    const cls=claseClima(p.code);
+    if(cls==='tormenta'||cls==='lluvia') alertas++;
+    const badge=cls?`<span class="badge">${BADGE[cls]}</span>`:'';
     const hora=p.eta.toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false});
     const temp=(p.temp==null?'–':p.temp+'°');
     const lluvia=(p.prob!=null&&p.prob>0)?` · 💧${p.prob}%`:'';
-    return `<div class="rstop">
+    return `<div class="rstop ${cls}">
       <div class="rtime">${hora}</div>
       <div class="rico">${ico}</div>
-      <div class="rinfo"><div class="rname">${p.nombre}</div><div class="rcond">${desc}${lluvia}</div></div>
+      <div class="rinfo"><div class="rname">${p.nombre}${badge}</div><div class="rcond">${desc}${lluvia}</div></div>
       <div class="rtemp">${temp}</div>
     </div>`;
   }).join('');
+  const aviso = alertas ? `<div class="ruta-aviso">⚠️ Vas a encontrar lluvia o tormenta en ${alertas} ${alertas===1?'punto':'puntos'} del trayecto.</div>` : '';
+  $('rutaStops').innerHTML=aviso+html;
 }
 
 // ---------- Eventos ----------
@@ -764,6 +812,14 @@ $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinde
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
 $('btnRuta').onclick=calcularRuta;
+$('btnRutaGeo').onclick=async()=>{
+  rutaStatus('Obteniendo tu ubicación...');
+  const u=await obtenerUbicacionActual();
+  if(!u){ rutaStatus('No se pudo obtener tu ubicación.',true); return; }
+  rutaOrigenCoords=u; $('rOrigen').value=u.name; rutaStatus('Origen: '+u.name);
+};
+// Si editan el origen a mano, dejar de usar las coords de "mi ubicación"
+$('rOrigen').addEventListener('input',()=>{ rutaOrigenCoords=null; });
 // Hora de salida por defecto = ahora (formato datetime-local)
 (function(){ const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); $('rSalida').value=n.toISOString().slice(0,16); })();
 // Abrir la ubicación seleccionada en Google Maps
