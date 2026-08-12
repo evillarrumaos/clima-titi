@@ -73,8 +73,6 @@
   @media (max-width:640px){ .selbox .ok{display:none} }
   .row-consultar{margin-top:14px}
   #btnCoords{min-width:180px; padding:12px 22px}
-  .btn-geo{margin-top:10px}
-  @media (max-width:640px){ .btn-geo{width:100%} }
   .favs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
   .chip{
     background:var(--panel2); border:1px solid var(--border); color:var(--text);
@@ -155,11 +153,11 @@
     /* Buscar ciudad: input + botón en línea */
     #btnSearch{width:100%}
 
-    /* Fila superior: Días al lado de Buscar coordenadas (no vertical) */
-    .rowtop{flex-direction:row !important; align-items:flex-end; gap:10px}
+    /* Fila superior: Días + Buscar coordenadas + Mi ubicación en la misma línea */
+    .rowtop{flex-direction:row !important; align-items:flex-end; gap:8px; flex-wrap:nowrap}
     .rowtop .field{width:auto}
-    .rowtop select#days{width:auto !important; min-width:70px}
-    .rowtop > #btnFinder{width:auto !important; flex:1; padding:13px 10px}
+    .rowtop select#days{width:auto !important; min-width:56px; padding:10px 6px}
+    .rowtop > #btnFinder, .rowtop > #btnGeo{width:auto !important; flex:1; min-width:0; padding:12px 6px; font-size:12px}
 
     /* Consultar a lo ancho completo */
     #btnCoords{width:100%; min-width:0}
@@ -213,7 +211,7 @@
 
     <div class="row rowtop" style="margin-top:14px">
       <div class="field">
-        <label>Días de pronóstico</label>
+        <label>Días</label>
         <select id="days">
           <option value="3">3</option>
           <option value="7" selected>7</option>
@@ -222,9 +220,8 @@
         </select>
       </div>
       <button id="btnFinder" class="ghost">🔎 Buscar coordenadas</button>
+      <button id="btnGeo" class="ghost">📍 Mi ubicación</button>
     </div>
-
-    <button id="btnGeo" class="ghost btn-geo">📍 Mi ubicación (GPS)</button>
 
     <div id="selBox" class="selbox hidden">
       <span class="pin">📍</span>
@@ -235,7 +232,7 @@
       <span class="ok">✔ listo para consultar</span>
     </div>
 
-    <div class="row-consultar">
+    <div id="rowConsultar" class="row-consultar hidden">
       <button id="btnCoords" disabled>Consultar</button>
     </div>
 
@@ -297,8 +294,8 @@
 <!-- MODAL: buscador de coordenadas -->
 <div id="finder" class="overlay hidden">
   <div class="modal">
-    <h3>🔎 Buscar coordenadas</h3>
-    <div class="sub">Escribí una ciudad, elegí el resultado y se pegan las coordenadas.</div>
+    <h3 id="fTitle">🔎 Buscar coordenadas</h3>
+    <div class="sub" id="fSub">Escribí un lugar (ciudad, paso, ruta) y elegí el resultado.</div>
     <div class="rowm">
       <input id="fCity" type="text" placeholder="Ej: Rosario, Mendoza, Neuquén..." autocomplete="off">
       <button id="fSearch">Buscar</button>
@@ -333,32 +330,23 @@ let lastData = null;   // guarda respuesta para CSV
 let lastLoc  = null;   // {name, lat, lon}
 let pendingName = null; // nombre de la ubicación elegida (aún sin consultar)
 
-// Fija las coordenadas (ocultas), habilita "Consultar" y muestra la ubicación elegida
-function seleccionarCoords(nombre, lat, lon){
+// Fija las coordenadas (ocultas) y muestra la ubicación elegida.
+// mostrarConsultar=true → aparece el botón Consultar (búsquedas). false → oculto (Mi ubicación/favoritos consultan solos).
+function seleccionarCoords(nombre, lat, lon, mostrarConsultar=true){
   $('lat').value=(+lat).toFixed(4);
   $('lon').value=(+lon).toFixed(4);
   pendingName=nombre;
-  $('btnCoords').disabled=false;
   $('selName').textContent=nombre;
   $('selBox').classList.remove('hidden');
+  if(mostrarConsultar){ $('btnCoords').disabled=false; $('rowConsultar').classList.remove('hidden'); }
+  else { $('rowConsultar').classList.add('hidden'); }
 }
 
-// ---------- Geocoding ----------
-async function buscarCiudad(){
-  const q = $('city').value.trim();
-  if(!q){ return; }
-  setStatus('Buscando ubicación...');
-  const res = $('results'); res.innerHTML='';
-  const results = await geocodificar(q);
-  if(!results.length){ setStatus('No se encontraron resultados para "'+q+'".',true); res.classList.add('hidden'); return; }
-  setStatus('');
-  results.forEach(loc=>{
-    const nombre=loc.name.split(',').slice(0,2).join(',').trim();
-    const b=document.createElement('button'); b.className='chip'; b.textContent='📍 '+loc.name; b.title=loc.fuente;
-    b.onclick=()=>{ seleccionarCoords(nombre, loc.lat, loc.lon); consultar(nombre); res.classList.add('hidden'); res.innerHTML=''; $('city').value=''; };
-    res.appendChild(b);
-  });
-  res.classList.remove('hidden');
+// ---------- Buscar ciudad: abre el pop-up con los resultados ----------
+function buscarCiudad(){
+  const q=$('city').value.trim();
+  if(!q) return;
+  abrirFinder('ciudad', q);
 }
 
 // ---------- Consulta principal ----------
@@ -381,7 +369,7 @@ async function consultar(nombre){
     render(j, lastLoc);
     // Recordar la última ubicación consultada para el próximo inicio
     try{ localStorage.setItem('clima_last', JSON.stringify({name:lastLoc.name, lat, lon, days})); }catch(e){}
-    setStatus('Actualizado: '+new Date().toLocaleString('es-AR'));
+    setStatus('Actualizado: '+new Date().toLocaleString('es-AR',{hour12:false}));
   }catch(e){ setStatus('Error de conexión con Open-Meteo.',true); }
 }
 
@@ -393,7 +381,7 @@ function render(j, loc){
   $('locName').textContent=loc.name;
   $('curTemp').textContent=Math.round(c.temperature_2m)+'°';
   $('curIco').textContent=ico; $('curDesc').textContent=desc;
-  $('curTime').textContent='Hora local: '+new Date(c.time).toLocaleString('es-AR');
+  $('curTime').textContent='Hora local: '+new Date(c.time).toLocaleString('es-AR',{hour12:false});
   $('curCoords').textContent=loc.lat.toFixed(4)+', '+loc.lon.toFixed(4);
   const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
   const dir=dirs[Math.round(c.wind_direction_10m/22.5)%16];
@@ -429,7 +417,7 @@ function render(j, loc){
   const rows=[];
   for(let i=start;i<Math.min(start+48,h.time.length);i++){
     rows.push(`<tr>
-      <td>${new Date(h.time[i]).toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${new Date(h.time[i]).toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false})}</td>
       <td>${Math.round(h.temperature_2m[i])}</td>
       <td>${Math.round(h.apparent_temperature[i])}</td>
       <td>${h.relative_humidity_2m[i]}</td>
@@ -483,7 +471,7 @@ function renderFavs(){
   f.forEach((loc,idx)=>{
     const chip=document.createElement('span'); chip.className='chip';
     const t=document.createElement('span'); t.textContent='⭐ '+loc.name; t.style.cursor='pointer';
-    t.onclick=()=>{ seleccionarCoords(loc.name, loc.lat, loc.lon); consultar(loc.name); };
+    t.onclick=()=>{ seleccionarCoords(loc.name, loc.lat, loc.lon, false); consultar(loc.name); };
     const x=document.createElement('span'); x.className='x'; x.textContent='✕';
     x.onclick=(e)=>{ e.stopPropagation(); const g=getFavs(); g.splice(idx,1); setFavs(g); };
     chip.appendChild(t); chip.appendChild(x); c.appendChild(chip);
@@ -497,11 +485,19 @@ function guardarFav(){
   setFavs(f); setStatus('Guardado en favoritos.');
 }
 
-// ---------- Modal buscador de coordenadas ----------
-function abrirFinder(){
+// ---------- Modal buscador (ciudad o coordenadas) ----------
+let finderMode='coord';
+function abrirFinder(mode, query){
+  finderMode = mode || 'coord';
+  const esCiudad = finderMode==='ciudad';
+  $('fTitle').textContent = esCiudad ? '🔎 Buscar ciudad' : '🔎 Buscar coordenadas';
+  $('fSub').textContent = esCiudad
+    ? 'Escribí una ciudad y elegí el resultado.'
+    : 'Escribí un lugar (ciudad, paso, ruta) y elegí el resultado.';
   $('finder').classList.remove('hidden');
   $('fResults').innerHTML='';
-  const inp=$('fCity'); inp.value=''; setTimeout(()=>inp.focus(),50);
+  const inp=$('fCity'); inp.value=query||''; setTimeout(()=>inp.focus(),50);
+  if(query) buscarFinder();
 }
 function cerrarFinder(){ $('finder').classList.add('hidden'); }
 
@@ -550,9 +546,10 @@ async function buscarFinder(){
   const q=$('fCity').value.trim();
   const box=$('fResults');
   if(!q){ box.innerHTML=''; return; }
-  box.innerHTML='<div class="sub" style="padding:4px 2px">Buscando en OpenStreetMap...</div>';
+  box.innerHTML='<div class="sub" style="padding:4px 2px">Buscando...</div>';
   let results=[];
-  try{ results=await osmBuscar(q); }catch(e){ box.innerHTML='<div class="sub" style="padding:4px 2px">Error de conexión al buscar.</div>'; return; }
+  try{ results = finderMode==='ciudad' ? await geocodificar(q) : await osmBuscar(q); }
+  catch(e){ box.innerHTML='<div class="sub" style="padding:4px 2px">Error de conexión al buscar.</div>'; return; }
   if(!results.length){ box.innerHTML='<div class="sub" style="padding:4px 2px">Sin resultados para "'+q+'". Probá con otra escritura o una ciudad cercana.</div>'; return; }
   box.innerHTML='';
   results.forEach(loc=>{
@@ -569,14 +566,30 @@ async function buscarFinder(){
 }
 
 // ---------- Geolocalización ----------
-// Respaldo por IP (aprox.) cuando el GPS no está disponible (archivo local, http, o permiso denegado)
+// Reverse geocoding: de coordenadas → nombre del lugar (ciudad, provincia, país)
+async function reverseGeocode(lat, lon){
+  try{
+    const u=`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&accept-language=es&zoom=12`;
+    const j=await (await fetch(u)).json();
+    if(j && j.address){
+      const a=j.address;
+      const loc=a.city||a.town||a.village||a.hamlet||a.suburb||a.county||a.state_district;
+      const nombre=[loc, a.state, a.country].filter(Boolean).join(', ');
+      if(nombre) return nombre;
+    }
+    if(j && j.display_name) return j.display_name.split(',').slice(0,3).join(',').trim();
+  }catch(e){}
+  return null;
+}
+
+// Respaldo por IP (aprox.) cuando el GPS no está disponible (http, o permiso denegado)
 async function ubicacionPorIP(motivo){
   setStatus((motivo?motivo+' ':'')+'Estimando ubicación por IP...');
   try{
     const j=await (await fetch('https://ipwho.is/')).json();
     if(j && j.success && j.latitude){
       const nombre=[j.city, j.region, j.country].filter(Boolean).join(', ')||'Mi ubicación (aprox.)';
-      seleccionarCoords(nombre, j.latitude, j.longitude);
+      seleccionarCoords(nombre, j.latitude, j.longitude, false);
       consultar(nombre);
       setStatus('Ubicación aproximada por IP: '+nombre);
       return;
@@ -589,9 +602,12 @@ function miUbicacion(){
   setStatus('Obteniendo ubicación...');
   if(!navigator.geolocation){ ubicacionPorIP('Sin GPS.'); return; }
   navigator.geolocation.getCurrentPosition(
-    p=>{
-      seleccionarCoords('Mi ubicación', p.coords.latitude, p.coords.longitude);
-      consultar('Mi ubicación');
+    async p=>{
+      const lat=p.coords.latitude, lon=p.coords.longitude;
+      setStatus('Ubicación obtenida. Buscando el lugar...');
+      const nombre=(await reverseGeocode(lat, lon)) || 'Mi ubicación';
+      seleccionarCoords(nombre, lat, lon, false);
+      consultar(nombre);
     },
     e=>{
       // 1=permiso denegado, 2=no disponible, 3=timeout → caemos a IP
@@ -606,7 +622,7 @@ $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
 $('btnCoords').onclick=()=>consultar(pendingName);
 $('btnGeo').onclick=miUbicacion;
-$('btnFinder').onclick=abrirFinder;
+$('btnFinder').onclick=()=>abrirFinder('coord','');
 $('fSearch').onclick=buscarFinder;
 $('fClose').onclick=cerrarFinder;
 $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); });
@@ -631,7 +647,7 @@ renderFavs();
     const u=JSON.parse(localStorage.getItem('clima_last'));
     if(u && u.lat!=null && u.lon!=null){
       if(u.days) $('days').value=u.days;
-      seleccionarCoords(u.name||'Última ubicación', u.lat, u.lon);
+      seleccionarCoords(u.name||'Última ubicación', u.lat, u.lon, false);
       consultar(u.name);
     }
   }catch(e){}
