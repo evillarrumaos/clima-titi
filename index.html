@@ -15,9 +15,6 @@
 <meta name="apple-mobile-web-app-title" content="Clima titi">
 <meta name="mobile-web-app-capable" content="yes">
 
-<!-- Mapa (Leaflet, local) -->
-<link rel="stylesheet" href="leaflet.css">
-
 <style>
   :root{
     --bg:#eaf6ff; --panel:#ffffff; --panel2:#f3f8fd; --border:#d6e6f2;
@@ -101,19 +98,11 @@
   .rstop.nieve .badge{background:#4a97c9}
   .linklike{background:transparent !important; border:none !important; box-shadow:none !important; color:var(--accent2) !important;
     font-weight:700; font-size:12px; padding:4px 0 0 !important; cursor:pointer; align-self:flex-start}
+  .ac-res{margin-top:6px; display:flex; flex-direction:column; gap:5px; max-height:190px; overflow:auto}
+  .ac-item{background:var(--panel2); border:1px solid var(--border); border-radius:8px; padding:9px 11px; cursor:pointer; font-size:13px}
+  .ac-item:hover{border-color:var(--accent)}
   .ruta-aviso{margin-top:10px; padding:10px 12px; border-radius:10px; font-weight:700; font-size:13px;
     background:#fff3e0; border:1px solid var(--warn); color:#8a5a00}
-  /* Mapa */
-  .modal-mapa{max-width:640px}
-  .mapa-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
-  .mapa-head h3{margin:0; font-size:16px}
-  #mapa{height:58vh; width:100%; border-radius:10px; border:1px solid var(--border); background:#dfeaf2}
-  .mapa-ctrl{display:flex; align-items:center; gap:10px; margin-top:10px}
-  .mapa-ctrl input[type=range]{flex:1}
-  .mapa-ctrl button{padding:8px 12px}
-  .mapa-time{font-weight:800; color:var(--accent2); min-width:52px; text-align:right}
-  .mapa-leg{font-size:11px; color:var(--muted); margin-top:8px}
-  .leaflet-container{font:inherit}
   .ruta-resumen{
     margin-top:12px; padding:12px 14px; border-radius:10px;
     background:linear-gradient(90deg,#e6f6ff,#fff1e2); border:1.5px solid var(--accent2);
@@ -293,10 +282,7 @@
   <div id="cardCurrent" class="card hidden">
     <div class="section-h">
       <h2 id="locName">—</h2>
-      <div style="display:flex; gap:8px; flex-wrap:wrap">
-        <button id="btnMapa" class="ghost">🌧️ Mapa de lluvia</button>
-        <button id="btnFav" class="ghost">☆ Guardar</button>
-      </div>
+      <button id="btnFav" class="ghost">☆ Guardar</button>
     </div>
     <div class="current">
       <div class="ico" id="curIco">–</div>
@@ -352,10 +338,12 @@
     <h3>🛣️ Clima en ruta</h3>
     <div class="sub">Origen, destino y hora de salida. Te muestro el clima en el trayecto.</div>
     <div class="field" style="margin-bottom:10px"><label>Origen</label>
-      <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off">
+      <input id="rOrigen" type="text" placeholder="Escribí y elegí de la lista" autocomplete="off">
+      <div id="rOrigenRes" class="ac-res hidden"></div>
       <button id="btnRutaGeo" class="linklike">📍 Usar mi ubicación</button></div>
     <div class="field" style="margin-bottom:10px"><label>Destino</label>
-      <input id="rDestino" type="text" placeholder="Ej: San Rafael" autocomplete="off"></div>
+      <input id="rDestino" type="text" placeholder="Escribí y elegí de la lista" autocomplete="off">
+      <div id="rDestinoRes" class="ac-res hidden"></div></div>
     <div class="field" style="margin-bottom:6px"><label>Salida</label>
       <input id="rSalida" type="datetime-local"></div>
     <div id="rutaStatus" class="status" style="margin-top:8px"></div>
@@ -363,23 +351,6 @@
       <button id="rutaClose" class="ghost">Cerrar</button>
       <button id="btnRuta">🧭 Calcular</button>
     </div>
-  </div>
-</div>
-
-<!-- MODAL: mapa de lluvia (radar) -->
-<div id="mapaModal" class="overlay hidden">
-  <div class="modal modal-mapa">
-    <div class="mapa-head">
-      <h3 id="mapaTitulo">🌧️ Mapa de lluvia</h3>
-      <button id="mapaClose" class="ghost">Cerrar</button>
-    </div>
-    <div id="mapa"></div>
-    <div class="mapa-ctrl">
-      <button id="mapaPlay" class="ghost">▶️</button>
-      <input id="mapaSlider" type="range" min="0" max="0" value="0" step="1">
-      <span id="mapaTime" class="mapa-time">—</span>
-    </div>
-    <div class="mapa-leg">Radar de precipitación: <b>RainViewer</b> · Base: OpenStreetMap. El punto naranja es la ubicación consultada.</div>
   </div>
 </div>
 
@@ -399,7 +370,6 @@
   </div>
 </div>
 
-<script src="leaflet.js"></script>
 <script>
 // ---- Tabla de códigos WMO (Open-Meteo weather_code) ----
 const WMO = {
@@ -462,6 +432,8 @@ async function consultar(nombre){
 
 // ---------- Render ----------
 function render(j, loc){
+  // Al mostrar el clima de un lugar, ocultar los resultados de ruta
+  $('cardRuta').classList.add('hidden');
   // Actual
   const c=j.current, u=j.current_units;
   const [desc,ico]=wmo(c.weather_code);
@@ -718,7 +690,34 @@ async function reverseNombre(lat, lon){
   const n=await reverseGeocode(lat, lon);
   return n ? n.split(',').slice(0,2).join(',').trim() : lat.toFixed(2)+', '+lon.toFixed(2);
 }
-let rutaOrigenCoords=null; // si se usa "mi ubicación", se guardan las coords exactas del origen
+let rutaOrigenCoords=null;  // coords exactas del origen (elegidas de la lista o "mi ubicación")
+let rutaDestinoCoords=null; // coords exactas del destino (elegidas de la lista)
+
+// Autocompletado con opciones para un campo (origen/destino)
+function acSetup(inputId, resId, setCoords){
+  const inp=$(inputId), box=$(resId); let timer=null;
+  inp.addEventListener('input',()=>{
+    setCoords(null);                 // al tipear a mano, se descarta la selección previa
+    clearTimeout(timer);
+    const q=inp.value.trim();
+    if(q.length<3){ box.classList.add('hidden'); box.innerHTML=''; return; }
+    timer=setTimeout(async()=>{
+      const res=await geocodificar(q);
+      if(!res.length){ box.innerHTML='<div class="ac-item">Sin resultados</div>'; box.classList.remove('hidden'); return; }
+      box.innerHTML='';
+      res.slice(0,6).forEach(loc=>{
+        const el=document.createElement('div'); el.className='ac-item'; el.textContent='📍 '+loc.name;
+        el.onclick=()=>{
+          inp.value=loc.name.split(',').slice(0,3).join(',').trim();
+          setCoords({ name:loc.name.split(',').slice(0,2).join(',').trim(), lat:loc.lat, lon:loc.lon });
+          box.classList.add('hidden'); box.innerHTML='';
+        };
+        box.appendChild(el);
+      });
+      box.classList.remove('hidden');
+    }, 400);
+  });
+}
 
 // Obtiene la ubicación actual (GPS y si no, IP) → {name, lat, lon}
 function obtenerUbicacionActual(){
@@ -752,7 +751,7 @@ async function calcularRuta(){
   if(!oq||!dq){ rutaStatus('Completá origen y destino.',true); return; }
   rutaStatus('Buscando origen y destino...');
   const o = rutaOrigenCoords || await geocodeUno(oq);
-  const d = await geocodeUno(dq);
+  const d = rutaDestinoCoords || await geocodeUno(dq);
   if(!o){ rutaStatus('No encontré el origen "'+oq+'".',true); return; }
   if(!d){ rutaStatus('No encontré el destino "'+dq+'".',true); return; }
 
@@ -761,7 +760,7 @@ async function calcularRuta(){
   try{
     const u=`https://router.project-osrm.org/route/v1/driving/${o.lon},${o.lat};${d.lon},${d.lat}?overview=full&geometries=geojson&annotations=duration`;
     const j=await (await fetch(u)).json();
-    if(j.code!=='Ok' || !j.routes || !j.routes.length){ rutaStatus('No se pudo calcular la ruta entre esos puntos.',true); return; }
+    if(j.code!=='Ok' || !j.routes || !j.routes.length){ rutaStatus('No se pudo calcular la ruta. Elegí origen y destino de la lista de opciones.',true); return; }
     route=j.routes[0];
   }catch(e){ rutaStatus('Error al calcular la ruta (servicio de rutas).',true); return; }
 
@@ -828,6 +827,11 @@ function abrirRutaModal(){
 function cerrarRutaModal(){ $('rutaModal').classList.add('hidden'); }
 
 function renderRuta(o,d,puntos,totalKm,total){
+  // Modo ruta: ocultar el clima del lugar y mostrar solo el trayecto
+  $('cardCurrent').classList.add('hidden');
+  $('cardDaily').classList.add('hidden');
+  $('cardHourly').classList.add('hidden');
+  $('selBox').classList.add('hidden');
   $('cardRuta').classList.remove('hidden');
   $('rutaTitulo').textContent=`🛣️ ${o.name} → ${d.name}`;
   const gmaps=`https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${d.lat},${d.lon}&travelmode=driving`;
@@ -857,61 +861,6 @@ function renderRuta(o,d,puntos,totalKm,total){
   $('rutaStops').innerHTML=aviso+html;
 }
 
-// ---------- Mapa de lluvia (Leaflet + OpenStreetMap + RainViewer) ----------
-let mapa=null, mapaBase=null, mapaRadar=null, mapaMarker=null;
-let mapaFrames=[], mapaHost='', mapaIdx=0, mapaTimer=null;
-
-function radarUrl(host, frame){ return `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`; }
-
-async function abrirMapa(){
-  const lat=parseFloat($('lat').value), lon=parseFloat($('lon').value);
-  if(isNaN(lat)||isNaN(lon)){ return; }
-  $('mapaTitulo').textContent='🌧️ '+($('selName').textContent||'Mapa de lluvia');
-  $('mapaModal').classList.remove('hidden');
-
-  if(!mapa){
-    mapa=L.map('mapa',{zoomControl:true, attributionControl:true}).setView([lat,lon],7);
-    mapaBase=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-      {maxZoom:12, attribution:'© OpenStreetMap'}).addTo(mapa);
-    mapaMarker=L.circleMarker([lat,lon],{radius:8,color:'#ff8a3d',weight:3,fillColor:'#ff8a3d',fillOpacity:.5}).addTo(mapa);
-  } else {
-    mapa.setView([lat,lon],7);
-    mapaMarker.setLatLng([lat,lon]);
-  }
-  setTimeout(()=>mapa.invalidateSize(),150);
-
-  // Cargar frames de radar
-  try{
-    const j=await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
-    mapaHost=j.host;
-    const past=(j.radar&&j.radar.past)||[], now=(j.radar&&j.radar.nowcast)||[];
-    mapaFrames=[...past, ...now];
-    if(!mapaFrames.length){ $('mapaTime').textContent='sin datos'; return; }
-    $('mapaSlider').max=mapaFrames.length-1;
-    mostrarFrame(Math.max(0, past.length-1)); // arrancar en el último frame observado
-  }catch(e){ $('mapaTime').textContent='error radar'; }
-}
-
-function mostrarFrame(i){
-  if(!mapaFrames.length) return;
-  mapaIdx=(i%mapaFrames.length+mapaFrames.length)%mapaFrames.length;
-  const f=mapaFrames[mapaIdx];
-  if(mapaRadar) mapa.removeLayer(mapaRadar);
-  mapaRadar=L.tileLayer(radarUrl(mapaHost,f),{opacity:.6, maxZoom:12}).addTo(mapa);
-  $('mapaSlider').value=mapaIdx;
-  $('mapaTime').textContent=new Date(f.time*1000).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
-}
-function mapaPlayPause(){
-  if(mapaTimer){ clearInterval(mapaTimer); mapaTimer=null; $('mapaPlay').textContent='▶️'; return; }
-  if(!mapaFrames.length) return;
-  $('mapaPlay').textContent='⏸️';
-  mapaTimer=setInterval(()=>mostrarFrame(mapaIdx+1), 700);
-}
-function cerrarMapa(){
-  if(mapaTimer){ clearInterval(mapaTimer); mapaTimer=null; $('mapaPlay').textContent='▶️'; }
-  $('mapaModal').classList.add('hidden');
-}
-
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
@@ -923,13 +872,6 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
-// Mapa de lluvia
-$('btnMapa').onclick=abrirMapa;
-$('mapaClose').onclick=cerrarMapa;
-$('mapaPlay').onclick=mapaPlayPause;
-$('mapaSlider').addEventListener('input',e=>mostrarFrame(+e.target.value));
-$('mapaModal').addEventListener('click',e=>{ if(e.target.id==='mapaModal') cerrarMapa(); });
-document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarMapa(); });
 // Pop-up de Clima en ruta
 $('btnRutaOpen').onclick=abrirRutaModal;
 $('btnRutaEditar').onclick=abrirRutaModal;
@@ -942,10 +884,13 @@ $('btnRutaGeo').onclick=async()=>{
   rutaStatus('Obteniendo tu ubicación...');
   const u=await obtenerUbicacionActual();
   if(!u){ rutaStatus('No se pudo obtener tu ubicación.',true); return; }
-  rutaOrigenCoords=u; $('rOrigen').value=u.name; rutaStatus('Origen: '+u.name);
+  rutaOrigenCoords=u; $('rOrigen').value=u.name;
+  $('rOrigenRes').classList.add('hidden'); $('rOrigenRes').innerHTML='';
+  rutaStatus('Origen: '+u.name);
 };
-// Si editan el origen a mano, dejar de usar las coords de "mi ubicación"
-$('rOrigen').addEventListener('input',()=>{ rutaOrigenCoords=null; });
+// Autocompletado de origen y destino (elegir de la lista fija las coordenadas exactas)
+acSetup('rOrigen','rOrigenRes', v=>{ rutaOrigenCoords=v; });
+acSetup('rDestino','rDestinoRes', v=>{ rutaDestinoCoords=v; });
 // Abrir la ubicación seleccionada en Google Maps
 $('selBox').onclick=()=>{
   const lat=$('lat').value, lon=$('lon').value;
