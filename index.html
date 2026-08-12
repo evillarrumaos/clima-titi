@@ -15,6 +15,9 @@
 <meta name="apple-mobile-web-app-title" content="Clima titi">
 <meta name="mobile-web-app-capable" content="yes">
 
+<!-- Mapa (Leaflet, local) -->
+<link rel="stylesheet" href="leaflet.css">
+
 <style>
   :root{
     --bg:#eaf6ff; --panel:#ffffff; --panel2:#f3f8fd; --border:#d6e6f2;
@@ -100,6 +103,17 @@
     font-weight:700; font-size:12px; padding:4px 0 0 !important; cursor:pointer; align-self:flex-start}
   .ruta-aviso{margin-top:10px; padding:10px 12px; border-radius:10px; font-weight:700; font-size:13px;
     background:#fff3e0; border:1px solid var(--warn); color:#8a5a00}
+  /* Mapa */
+  .modal-mapa{max-width:640px}
+  .mapa-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
+  .mapa-head h3{margin:0; font-size:16px}
+  #mapa{height:58vh; width:100%; border-radius:10px; border:1px solid var(--border); background:#dfeaf2}
+  .mapa-ctrl{display:flex; align-items:center; gap:10px; margin-top:10px}
+  .mapa-ctrl input[type=range]{flex:1}
+  .mapa-ctrl button{padding:8px 12px}
+  .mapa-time{font-weight:800; color:var(--accent2); min-width:52px; text-align:right}
+  .mapa-leg{font-size:11px; color:var(--muted); margin-top:8px}
+  .leaflet-container{font:inherit}
   .ruta-resumen{
     margin-top:12px; padding:12px 14px; border-radius:10px;
     background:linear-gradient(90deg,#e6f6ff,#fff1e2); border:1.5px solid var(--accent2);
@@ -279,7 +293,10 @@
   <div id="cardCurrent" class="card hidden">
     <div class="section-h">
       <h2 id="locName">—</h2>
-      <button id="btnFav" class="ghost">☆ Guardar</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="btnMapa" class="ghost">🌧️ Mapa de lluvia</button>
+        <button id="btnFav" class="ghost">☆ Guardar</button>
+      </div>
     </div>
     <div class="current">
       <div class="ico" id="curIco">–</div>
@@ -349,6 +366,23 @@
   </div>
 </div>
 
+<!-- MODAL: mapa de lluvia (radar) -->
+<div id="mapaModal" class="overlay hidden">
+  <div class="modal modal-mapa">
+    <div class="mapa-head">
+      <h3 id="mapaTitulo">🌧️ Mapa de lluvia</h3>
+      <button id="mapaClose" class="ghost">Cerrar</button>
+    </div>
+    <div id="mapa"></div>
+    <div class="mapa-ctrl">
+      <button id="mapaPlay" class="ghost">▶️</button>
+      <input id="mapaSlider" type="range" min="0" max="0" value="0" step="1">
+      <span id="mapaTime" class="mapa-time">—</span>
+    </div>
+    <div class="mapa-leg">Radar de precipitación: <b>RainViewer</b> · Base: OpenStreetMap. El punto naranja es la ubicación consultada.</div>
+  </div>
+</div>
+
 <!-- MODAL: buscador de coordenadas -->
 <div id="finder" class="overlay hidden">
   <div class="modal">
@@ -365,6 +399,7 @@
   </div>
 </div>
 
+<script src="leaflet.js"></script>
 <script>
 // ---- Tabla de códigos WMO (Open-Meteo weather_code) ----
 const WMO = {
@@ -822,6 +857,61 @@ function renderRuta(o,d,puntos,totalKm,total){
   $('rutaStops').innerHTML=aviso+html;
 }
 
+// ---------- Mapa de lluvia (Leaflet + OpenStreetMap + RainViewer) ----------
+let mapa=null, mapaBase=null, mapaRadar=null, mapaMarker=null;
+let mapaFrames=[], mapaHost='', mapaIdx=0, mapaTimer=null;
+
+function radarUrl(host, frame){ return `${host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`; }
+
+async function abrirMapa(){
+  const lat=parseFloat($('lat').value), lon=parseFloat($('lon').value);
+  if(isNaN(lat)||isNaN(lon)){ return; }
+  $('mapaTitulo').textContent='🌧️ '+($('selName').textContent||'Mapa de lluvia');
+  $('mapaModal').classList.remove('hidden');
+
+  if(!mapa){
+    mapa=L.map('mapa',{zoomControl:true, attributionControl:true}).setView([lat,lon],7);
+    mapaBase=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+      {maxZoom:12, attribution:'© OpenStreetMap'}).addTo(mapa);
+    mapaMarker=L.circleMarker([lat,lon],{radius:8,color:'#ff8a3d',weight:3,fillColor:'#ff8a3d',fillOpacity:.5}).addTo(mapa);
+  } else {
+    mapa.setView([lat,lon],7);
+    mapaMarker.setLatLng([lat,lon]);
+  }
+  setTimeout(()=>mapa.invalidateSize(),150);
+
+  // Cargar frames de radar
+  try{
+    const j=await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
+    mapaHost=j.host;
+    const past=(j.radar&&j.radar.past)||[], now=(j.radar&&j.radar.nowcast)||[];
+    mapaFrames=[...past, ...now];
+    if(!mapaFrames.length){ $('mapaTime').textContent='sin datos'; return; }
+    $('mapaSlider').max=mapaFrames.length-1;
+    mostrarFrame(Math.max(0, past.length-1)); // arrancar en el último frame observado
+  }catch(e){ $('mapaTime').textContent='error radar'; }
+}
+
+function mostrarFrame(i){
+  if(!mapaFrames.length) return;
+  mapaIdx=(i%mapaFrames.length+mapaFrames.length)%mapaFrames.length;
+  const f=mapaFrames[mapaIdx];
+  if(mapaRadar) mapa.removeLayer(mapaRadar);
+  mapaRadar=L.tileLayer(radarUrl(mapaHost,f),{opacity:.6, maxZoom:12}).addTo(mapa);
+  $('mapaSlider').value=mapaIdx;
+  $('mapaTime').textContent=new Date(f.time*1000).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
+function mapaPlayPause(){
+  if(mapaTimer){ clearInterval(mapaTimer); mapaTimer=null; $('mapaPlay').textContent='▶️'; return; }
+  if(!mapaFrames.length) return;
+  $('mapaPlay').textContent='⏸️';
+  mapaTimer=setInterval(()=>mostrarFrame(mapaIdx+1), 700);
+}
+function cerrarMapa(){
+  if(mapaTimer){ clearInterval(mapaTimer); mapaTimer=null; $('mapaPlay').textContent='▶️'; }
+  $('mapaModal').classList.add('hidden');
+}
+
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
@@ -833,6 +923,13 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+// Mapa de lluvia
+$('btnMapa').onclick=abrirMapa;
+$('mapaClose').onclick=cerrarMapa;
+$('mapaPlay').onclick=mapaPlayPause;
+$('mapaSlider').addEventListener('input',e=>mostrarFrame(+e.target.value));
+$('mapaModal').addEventListener('click',e=>{ if(e.target.id==='mapaModal') cerrarMapa(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarMapa(); });
 // Pop-up de Clima en ruta
 $('btnRutaOpen').onclick=abrirRutaModal;
 $('btnRutaEditar').onclick=abrirRutaModal;

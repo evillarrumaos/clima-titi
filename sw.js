@@ -1,6 +1,6 @@
 // Service worker mínimo: cachea la "cáscara" de la app para que instale y abra offline.
 // Las llamadas a las APIs (Open-Meteo, OpenStreetMap, ipwho.is) NO se cachean: van siempre a la red.
-const CACHE = 'clima-titi-v8';
+const CACHE = 'clima-titi-v9';
 const SHELL = [
   './',
   './index.html',
@@ -8,7 +8,9 @@ const SHELL = [
   './icon-192.png',
   './icon-512.png',
   './icon-maskable.png',
-  './apple-touch-icon.png'
+  './apple-touch-icon.png',
+  './leaflet.js',
+  './leaflet.css'
 ];
 
 self.addEventListener('install', e => {
