@@ -232,9 +232,6 @@
       <span class="ok">✔ listo para consultar</span>
     </div>
 
-    <div id="rowConsultar" class="row-consultar hidden">
-      <button id="btnCoords" disabled>Consultar</button>
-    </div>
 
     <div id="results" class="hidden" style="margin-top:12px"></div>
     <div id="favs" class="favs"></div>
@@ -267,7 +264,6 @@
   <div id="cardDaily" class="card hidden">
     <div class="section-h">
       <h2>Pronóstico diario</h2>
-      <button id="btnCsvDaily" class="ghost">⬇️ Descargar CSV</button>
     </div>
     <div class="days" id="days-grid"></div>
   </div>
@@ -276,7 +272,6 @@
   <div id="cardHourly" class="card hidden">
     <div class="section-h">
       <h2>Detalle horario (próximas 48 h)</h2>
-      <button id="btnCsvHourly" class="ghost">⬇️ Descargar CSV</button>
     </div>
     <div class="scroll">
       <table id="hourly">
@@ -328,18 +323,12 @@ const setStatus = (msg,err=false)=>{ const s=$('status'); s.textContent=msg||'';
 
 let lastData = null;   // guarda respuesta para CSV
 let lastLoc  = null;   // {name, lat, lon}
-let pendingName = null; // nombre de la ubicación elegida (aún sin consultar)
-
 // Fija las coordenadas (ocultas) y muestra la ubicación elegida.
-// mostrarConsultar=true → aparece el botón Consultar (búsquedas). false → oculto (Mi ubicación/favoritos consultan solos).
-function seleccionarCoords(nombre, lat, lon, mostrarConsultar=true){
+function seleccionarCoords(nombre, lat, lon){
   $('lat').value=(+lat).toFixed(4);
   $('lon').value=(+lon).toFixed(4);
-  pendingName=nombre;
   $('selName').textContent=nombre;
   $('selBox').classList.remove('hidden');
-  if(mostrarConsultar){ $('btnCoords').disabled=false; $('rowConsultar').classList.remove('hidden'); }
-  else { $('rowConsultar').classList.add('hidden'); }
 }
 
 // ---------- Buscar ciudad: abre el pop-up con los resultados ----------
@@ -557,9 +546,11 @@ async function buscarFinder(){
     el.innerHTML=`<span class="nm">📍 ${loc.name}</span><span class="co">${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}</span>`;
     el.title=loc.fuente;
     el.onclick=()=>{
-      seleccionarCoords(loc.name.split(',').slice(0,2).join(',').trim(), loc.lat, loc.lon);
+      const nombre=loc.name.split(',').slice(0,2).join(',').trim();
+      seleccionarCoords(nombre, loc.lat, loc.lon);
       $('fResults').innerHTML=''; $('fCity').value='';
       cerrarFinder();
+      consultar(nombre);
     };
     box.appendChild(el);
   });
@@ -620,7 +611,6 @@ function miUbicacion(){
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
-$('btnCoords').onclick=()=>consultar(pendingName);
 $('btnGeo').onclick=miUbicacion;
 $('btnFinder').onclick=()=>abrirFinder('coord','');
 $('fSearch').onclick=buscarFinder;
@@ -629,8 +619,6 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
-$('btnCsvDaily').onclick=csvDaily;
-$('btnCsvHourly').onclick=csvHourly;
 
 // Limpieza única: quitar el favorito precargado de Buenos Aires si quedó guardado
 if(!localStorage.getItem('clima_fav_bsas_limpiado')){
