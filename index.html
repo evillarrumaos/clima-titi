@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Consulta del Clima by titi</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>%E2%9B%85</text></svg>">
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2ca6e0">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Clima titi">
+<meta name="mobile-web-app-capable" content="yes">
+
+<style>
+  :root{
+    --bg:#eaf6ff; --panel:#ffffff; --panel2:#f3f8fd; --border:#d6e6f2;
+    --text:#123049; --muted:#5b7186; --accent:#ff8a3d; --accent2:#2ca6e0;
+    --ok:#22c55e; --warn:#f59e0b; --danger:#ef4444;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    background:linear-gradient(180deg,#eaf6ff 0%,#fdf0e2 100%); background-attachment:fixed;
+    color:var(--text); line-height:1.4; min-height:100vh;
+  }
+  header{
+    background:linear-gradient(120deg,#2ca6e0 0%,#22c1c3 45%,#ff8a3d 100%);
+    padding:18px 24px; border-bottom:none;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap;
+    box-shadow:0 4px 18px rgba(44,166,224,.28);
+  }
+  header h1{margin:0; font-size:20px; font-weight:800; color:#fff; text-shadow:0 1px 2px rgba(0,0,0,.18)}
+  header .tag{color:#fff4cc; font-weight:800}
+  .wrap{max-width:1100px; margin:0 auto; padding:20px 24px 60px}
+  .card{
+    background:var(--panel); border:1px solid var(--border);
+    border-radius:14px; padding:18px 20px; margin-bottom:18px;
+    box-shadow:0 6px 18px rgba(18,48,73,.06);
+  }
+  .row{display:flex; gap:12px; flex-wrap:wrap; align-items:flex-end}
+  .field{display:flex; flex-direction:column; gap:5px}
+  label{font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  input,select{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    padding:10px 12px; border-radius:9px; font-size:14px; outline:none;
+  }
+  input:focus,select:focus{border-color:var(--accent)}
+  input[type=number]{width:130px}
+  button{
+    background:var(--accent); color:#fff; border:none; font-weight:700;
+    padding:11px 18px; border-radius:9px; cursor:pointer; font-size:14px;
+    box-shadow:0 3px 10px rgba(255,138,61,.35);
+  }
+  button:hover{filter:brightness(1.08)}
+  button.ghost{background:transparent; color:var(--text); border:1px solid var(--border); font-weight:600}
+  button.ghost:hover{border-color:var(--accent); color:var(--accent)}
+  button:disabled{opacity:.5; cursor:not-allowed}
+  .hint{font-size:12px; color:var(--muted); margin-top:8px}
+  .selbox{
+    display:flex; align-items:center; gap:12px; margin-top:14px;
+    background:linear-gradient(90deg,#e6f6ff,#fff1e2);
+    border:1.5px solid var(--accent2); border-radius:12px; padding:12px 14px;
+  }
+  .selbox .pin{font-size:24px}
+  .selbox .txt{flex:1; min-width:0}
+  .selbox .lbl{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
+  .selbox b{font-size:16px; color:var(--text); display:block; overflow:hidden; text-overflow:ellipsis}
+  .selbox .ok{font-size:12px; font-weight:700; color:#0a8f4a; white-space:nowrap}
+  @media (max-width:640px){ .selbox .ok{display:none} }
+  .row-consultar{margin-top:14px}
+  #btnCoords{min-width:180px; padding:12px 22px}
+  .btn-geo{margin-top:10px}
+  @media (max-width:640px){ .btn-geo{width:100%} }
+  .favs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
+  .chip{
+    background:var(--panel2); border:1px solid var(--border); color:var(--text);
+    padding:6px 12px; border-radius:999px; font-size:13px; cursor:pointer;
+    display:flex; align-items:center; gap:8px;
+  }
+  .chip:hover{border-color:var(--accent)}
+  .chip .x{color:var(--muted); font-weight:700}
+  .chip .x:hover{color:var(--danger)}
+
+  .current{display:flex; align-items:center; gap:22px; flex-wrap:wrap}
+  .current .temp{font-size:56px; font-weight:800; line-height:1}
+  .current .ico{font-size:56px}
+  .current .desc{font-size:18px}
+  .current .loc{font-size:14px; color:var(--muted)}
+  .metrics{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:12px; margin-top:16px}
+  .metric{background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px 14px}
+  .metric .k{font-size:12px; color:var(--muted)}
+  .metric .v{font-size:20px; font-weight:700; margin-top:2px}
+
+  .days{display:grid; grid-template-columns:repeat(auto-fit,minmax(120px,1fr)); gap:10px}
+  .day{background:var(--panel2); border:1px solid var(--border); border-radius:10px; padding:12px; text-align:center}
+  .day .d{font-size:13px; color:var(--muted); text-transform:capitalize}
+  .day .i{font-size:32px; margin:6px 0}
+  .day .max{font-weight:700}
+  .day .min{color:var(--muted)}
+  .day .rain{font-size:12px; color:var(--accent2); margin-top:4px}
+  .day .sun{font-size:12px; color:var(--muted); margin-top:4px}
+
+  table{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px}
+  th,td{padding:8px 10px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap}
+  th:first-child,td:first-child{text-align:left}
+  th{color:var(--muted); font-weight:600; position:sticky; top:0; background:var(--panel)}
+  .scroll{max-height:340px; overflow:auto; border:1px solid var(--border); border-radius:10px}
+
+  .section-h{display:flex; justify-content:space-between; align-items:center; margin-bottom:12px}
+  .section-h h2{margin:0; font-size:16px}
+  .status{font-size:14px; color:var(--muted)}
+  .status.err{color:var(--danger)}
+  .hidden{display:none !important}
+
+  /* Modal buscador de coordenadas */
+  .overlay{
+    position:fixed; inset:0; background:rgba(0,0,0,.6); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center; padding:60px 16px; z-index:50;
+  }
+  .modal{
+    background:var(--panel); border:1px solid var(--border); border-radius:14px;
+    width:100%; max-width:480px; padding:20px; box-shadow:0 20px 60px rgba(0,0,0,.5);
+  }
+  .modal h3{margin:0 0 4px; font-size:17px}
+  .modal .sub{font-size:13px; color:var(--muted); margin-bottom:14px}
+  .modal .rowm{display:flex; gap:10px}
+  .modal input{flex:1}
+  .mresults{margin-top:12px; display:flex; flex-direction:column; gap:6px; max-height:320px; overflow:auto}
+  .mres{
+    background:var(--panel2); border:1px solid var(--border); border-radius:9px;
+    padding:10px 12px; cursor:pointer; display:flex; justify-content:space-between; align-items:center; gap:10px;
+  }
+  .mres:hover{border-color:var(--accent)}
+  .mres .nm{font-size:14px}
+  .mres .co{font-size:12px; color:var(--muted); white-space:nowrap}
+  .modal .foot{display:flex; justify-content:flex-end; margin-top:14px}
+  /* ---------- Móvil ---------- */
+  @media (max-width:640px){
+    header{padding:14px 16px}
+    header h1{font-size:17px}
+    .wrap{padding:14px 14px 48px}
+    .card{padding:14px; border-radius:12px}
+
+    /* Los campos y botones se apilan a lo ancho completo */
+    .row{flex-direction:column; align-items:stretch; gap:10px}
+    .field{width:100%}
+    input,select{width:100% !important}
+    input[type=number]{width:100% !important}
+    .row > button{width:100%; padding:13px}
+
+    /* Buscar ciudad: input + botón en línea */
+    #btnSearch{width:100%}
+
+    /* Fila superior: Días al lado de Buscar coordenadas (no vertical) */
+    .rowtop{flex-direction:row !important; align-items:flex-end; gap:10px}
+    .rowtop .field{width:auto}
+    .rowtop select#days{width:auto !important; min-width:70px}
+    .rowtop > #btnFinder{width:auto !important; flex:1; padding:13px 10px}
+
+    /* Consultar a lo ancho completo */
+    #btnCoords{width:100%; min-width:0}
+
+    .current{gap:14px}
+    .current .temp{font-size:44px}
+    .current .ico{font-size:44px}
+    .current > div[style*="margin-left"]{margin-left:0 !important; width:100%; text-align:left !important}
+    .current .loc{text-align:left}
+
+    .metrics{grid-template-columns:repeat(2,1fr); gap:10px}
+    .metric .v{font-size:18px}
+    .days{grid-template-columns:repeat(2,1fr)}
+
+    .section-h{flex-wrap:wrap; gap:8px}
+    .section-h button{width:100%}
+
+    th,td{padding:7px 8px; font-size:12px}
+
+    .favs .chip{font-size:12px}
+
+    /* Modal a pantalla casi completa */
+    .overlay{padding:16px 10px; align-items:flex-start}
+    .modal{max-width:100%; padding:16px}
+    .modal .rowm{flex-direction:column}
+    .modal .rowm button{width:100%}
+    .mresults{max-height:60vh}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌦️ CONSULTA DEL CLIMA <span class="tag">by titi</span></h1>
+</header>
+
+<div class="wrap">
+
+  <!-- BUSQUEDA -->
+  <div class="card">
+    <div class="row">
+      <div class="field" style="flex:1; min-width:220px">
+        <label>Buscar ciudad</label>
+        <input id="city" type="text" placeholder="Ej: Buenos Aires, Rosario, Mendoza..." autocomplete="off">
+      </div>
+      <button id="btnSearch">Buscar</button>
+    </div>
+
+    <!-- lat/lon ocultos: se completan desde el buscador de coordenadas -->
+    <input id="lat" type="hidden">
+    <input id="lon" type="hidden">
+
+    <div class="row rowtop" style="margin-top:14px">
+      <div class="field">
+        <label>Días de pronóstico</label>
+        <select id="days">
+          <option value="3">3</option>
+          <option value="7" selected>7</option>
+          <option value="14">14</option>
+          <option value="16">16</option>
+        </select>
+      </div>
+      <button id="btnFinder" class="ghost">🔎 Buscar coordenadas</button>
+    </div>
+
+    <button id="btnGeo" class="ghost btn-geo">📍 Mi ubicación (GPS)</button>
+
+    <div id="selBox" class="selbox hidden">
+      <span class="pin">📍</span>
+      <div class="txt">
+        <div class="lbl">Ubicación seleccionada</div>
+        <b id="selName"></b>
+      </div>
+      <span class="ok">✔ listo para consultar</span>
+    </div>
+
+    <div class="row-consultar">
+      <button id="btnCoords" disabled>Consultar</button>
+    </div>
+
+    <div id="results" class="hidden" style="margin-top:12px"></div>
+    <div id="favs" class="favs"></div>
+    <div class="hint">Sin registro ni API key. Datos: Open-Meteo. Se abre localmente en el navegador.</div>
+  </div>
+
+  <div id="status" class="status"></div>
+
+  <!-- ACTUAL -->
+  <div id="cardCurrent" class="card hidden">
+    <div class="section-h">
+      <h2 id="locName">—</h2>
+      <button id="btnFav" class="ghost">☆ Guardar</button>
+    </div>
+    <div class="current">
+      <div class="ico" id="curIco">–</div>
+      <div>
+        <div class="temp" id="curTemp">–</div>
+        <div class="desc" id="curDesc">–</div>
+      </div>
+      <div style="margin-left:auto; text-align:right">
+        <div class="loc" id="curTime">–</div>
+        <div class="loc" id="curCoords">–</div>
+      </div>
+    </div>
+    <div class="metrics" id="metrics"></div>
+  </div>
+
+  <!-- PRONOSTICO DIARIO -->
+  <div id="cardDaily" class="card hidden">
+    <div class="section-h">
+      <h2>Pronóstico diario</h2>
+      <button id="btnCsvDaily" class="ghost">⬇️ Descargar CSV</button>
+    </div>
+    <div class="days" id="days-grid"></div>
+  </div>
+
+  <!-- HORARIO -->
+  <div id="cardHourly" class="card hidden">
+    <div class="section-h">
+      <h2>Detalle horario (próximas 48 h)</h2>
+      <button id="btnCsvHourly" class="ghost">⬇️ Descargar CSV</button>
+    </div>
+    <div class="scroll">
+      <table id="hourly">
+        <thead><tr>
+          <th>Hora</th><th>Temp °C</th><th>Sens. °C</th><th>Humedad %</th>
+          <th>Precip. mm</th><th>Prob. lluvia %</th><th>Viento km/h</th><th>Ráfaga km/h</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- MODAL: buscador de coordenadas -->
+<div id="finder" class="overlay hidden">
+  <div class="modal">
+    <h3>🔎 Buscar coordenadas</h3>
+    <div class="sub">Escribí una ciudad, elegí el resultado y se pegan las coordenadas.</div>
+    <div class="rowm">
+      <input id="fCity" type="text" placeholder="Ej: Rosario, Mendoza, Neuquén..." autocomplete="off">
+      <button id="fSearch">Buscar</button>
+    </div>
+    <div id="fResults" class="mresults"></div>
+    <div class="foot">
+      <button id="fClose" class="ghost">Cerrar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ---- Tabla de códigos WMO (Open-Meteo weather_code) ----
+const WMO = {
+  0:['Despejado','☀️'], 1:['Mayormente despejado','🌤️'], 2:['Parcialmente nublado','⛅'],
+  3:['Nublado','☁️'], 45:['Niebla','🌫️'], 48:['Niebla con escarcha','🌫️'],
+  51:['Llovizna leve','🌦️'], 53:['Llovizna','🌦️'], 55:['Llovizna intensa','🌦️'],
+  56:['Llovizna helada','🌧️'], 57:['Llovizna helada intensa','🌧️'],
+  61:['Lluvia leve','🌧️'], 63:['Lluvia','🌧️'], 65:['Lluvia intensa','🌧️'],
+  66:['Lluvia helada','🌧️'], 67:['Lluvia helada intensa','🌧️'],
+  71:['Nieve leve','🌨️'], 73:['Nieve','🌨️'], 75:['Nieve intensa','🌨️'], 77:['Granos de nieve','🌨️'],
+  80:['Chubascos leves','🌦️'], 81:['Chubascos','🌦️'], 82:['Chubascos violentos','⛈️'],
+  85:['Chubascos de nieve','🌨️'], 86:['Chubascos de nieve intensos','🌨️'],
+  95:['Tormenta','⛈️'], 96:['Tormenta con granizo','⛈️'], 99:['Tormenta con granizo fuerte','⛈️']
+};
+const wmo = c => WMO[c] || ['—','❓'];
+
+const $ = id => document.getElementById(id);
+const setStatus = (msg,err=false)=>{ const s=$('status'); s.textContent=msg||''; s.className='status'+(err?' err':''); };
+
+let lastData = null;   // guarda respuesta para CSV
+let lastLoc  = null;   // {name, lat, lon}
+let pendingName = null; // nombre de la ubicación elegida (aún sin consultar)
+
+// Fija las coordenadas (ocultas), habilita "Consultar" y muestra la ubicación elegida
+function seleccionarCoords(nombre, lat, lon){
+  $('lat').value=(+lat).toFixed(4);
+  $('lon').value=(+lon).toFixed(4);
+  pendingName=nombre;
+  $('btnCoords').disabled=false;
+  $('selName').textContent=nombre;
+  $('selBox').classList.remove('hidden');
+}
+
+// ---------- Geocoding ----------
+async function buscarCiudad(){
+  const q = $('city').value.trim();
+  if(!q){ return; }
+  setStatus('Buscando ubicación...');
+  const res = $('results'); res.innerHTML='';
+  const results = await geocodificar(q);
+  if(!results.length){ setStatus('No se encontraron resultados para "'+q+'".',true); res.classList.add('hidden'); return; }
+  setStatus('');
+  results.forEach(loc=>{
+    const nombre=loc.name.split(',').slice(0,2).join(',').trim();
+    const b=document.createElement('button'); b.className='chip'; b.textContent='📍 '+loc.name; b.title=loc.fuente;
+    b.onclick=()=>{ seleccionarCoords(nombre, loc.lat, loc.lon); consultar(nombre); res.classList.add('hidden'); res.innerHTML=''; $('city').value=''; };
+    res.appendChild(b);
+  });
+  res.classList.remove('hidden');
+}
+
+// ---------- Consulta principal ----------
+async function consultar(nombre){
+  const lat=parseFloat($('lat').value), lon=parseFloat($('lon').value);
+  if(isNaN(lat)||isNaN(lon)){ setStatus('Ingresá latitud y longitud válidas.',true); return; }
+  const days=$('days').value;
+  setStatus('Consultando clima...');
+  const params = new URLSearchParams({
+    latitude:lat, longitude:lon, timezone:'auto', forecast_days:days,
+    current:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,surface_pressure',
+    hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m',
+    daily:'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset'
+  });
+  try{
+    const r=await fetch('https://api.open-meteo.com/v1/forecast?'+params.toString());
+    if(!r.ok){ setStatus('Error del servicio Open-Meteo ('+r.status+').',true); return; }
+    const j=await r.json();
+    lastData=j; lastLoc={name:nombre||('('+lat+', '+lon+')'), lat, lon};
+    render(j, lastLoc);
+    // Recordar la última ubicación consultada para el próximo inicio
+    try{ localStorage.setItem('clima_last', JSON.stringify({name:lastLoc.name, lat, lon, days})); }catch(e){}
+    setStatus('Actualizado: '+new Date().toLocaleString('es-AR'));
+  }catch(e){ setStatus('Error de conexión con Open-Meteo.',true); }
+}
+
+// ---------- Render ----------
+function render(j, loc){
+  // Actual
+  const c=j.current, u=j.current_units;
+  const [desc,ico]=wmo(c.weather_code);
+  $('locName').textContent=loc.name;
+  $('curTemp').textContent=Math.round(c.temperature_2m)+'°';
+  $('curIco').textContent=ico; $('curDesc').textContent=desc;
+  $('curTime').textContent='Hora local: '+new Date(c.time).toLocaleString('es-AR');
+  $('curCoords').textContent=loc.lat.toFixed(4)+', '+loc.lon.toFixed(4);
+  const dirs=['N','NNE','NE','ENE','E','ESE','SE','SSE','S','SSO','SO','OSO','O','ONO','NO','NNO'];
+  const dir=dirs[Math.round(c.wind_direction_10m/22.5)%16];
+  const M=[
+    ['Sensación', Math.round(c.apparent_temperature)+'°'],
+    ['Humedad', c.relative_humidity_2m+'%'],
+    ['Precipitación', c.precipitation+' mm'],
+    ['Viento', Math.round(c.wind_speed_10m)+' km/h '+dir],
+    ['Ráfagas', Math.round(c.wind_gusts_10m)+' km/h'],
+    ['Presión', Math.round(c.surface_pressure)+' hPa'],
+  ];
+  $('metrics').innerHTML=M.map(m=>`<div class="metric"><div class="k">${m[0]}</div><div class="v">${m[1]}</div></div>`).join('');
+  $('cardCurrent').classList.remove('hidden');
+
+  // Diario
+  const d=j.daily;
+  const hhmm=s=>s?new Date(s).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false}):'—';
+  $('days-grid').innerHTML=d.time.map((t,i)=>{
+    const [ds,di]=wmo(d.weather_code[i]);
+    const wd=new Date(t+'T00:00').toLocaleDateString('es-AR',{weekday:'short', day:'numeric', month:'short'});
+    return `<div class="day" title="${ds}">
+      <div class="d">${wd}</div><div class="i">${di}</div>
+      <div><span class="max">${Math.round(d.temperature_2m_max[i])}°</span> / <span class="min">${Math.round(d.temperature_2m_min[i])}°</span></div>
+      <div class="rain">💧 ${d.precipitation_sum[i]} mm · ${d.precipitation_probability_max[i]??0}%</div>
+      <div class="sun">🌅 ${hhmm(d.sunrise[i])} · 🌇 ${hhmm(d.sunset[i])}</div>
+    </div>`;
+  }).join('');
+  $('cardDaily').classList.remove('hidden');
+
+  // Horario (48h desde ahora)
+  const h=j.hourly, now=new Date(c.time).getTime();
+  let start=h.time.findIndex(t=>new Date(t).getTime()>=now); if(start<0)start=0;
+  const rows=[];
+  for(let i=start;i<Math.min(start+48,h.time.length);i++){
+    rows.push(`<tr>
+      <td>${new Date(h.time[i]).toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit'})}</td>
+      <td>${Math.round(h.temperature_2m[i])}</td>
+      <td>${Math.round(h.apparent_temperature[i])}</td>
+      <td>${h.relative_humidity_2m[i]}</td>
+      <td>${h.precipitation[i]}</td>
+      <td>${h.precipitation_probability[i]??''}</td>
+      <td>${Math.round(h.wind_speed_10m[i])}</td>
+      <td>${Math.round(h.wind_gusts_10m[i])}</td>
+    </tr>`);
+  }
+  $('hourly').querySelector('tbody').innerHTML=rows.join('');
+  $('cardHourly').classList.remove('hidden');
+}
+
+// ---------- CSV ----------
+function descargar(nombre, csv){
+  const blob=new Blob(["﻿"+csv],{type:'text/csv;charset=utf-8;'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=nombre; a.click(); URL.revokeObjectURL(a.href);
+}
+function csvDaily(){
+  if(!lastData) return;
+  const d=lastData.daily;
+  const head=['fecha','codigo','descripcion','temp_max','temp_min','precip_mm','prob_lluvia_%','viento_max_kmh','amanecer','atardecer'];
+  const lines=[head.join(';')];
+  d.time.forEach((t,i)=>{
+    lines.push([t, d.weather_code[i], '"'+wmo(d.weather_code[i])[0]+'"', d.temperature_2m_max[i], d.temperature_2m_min[i],
+      d.precipitation_sum[i], d.precipitation_probability_max[i]??'', d.wind_speed_10m_max[i],
+      d.sunrise[i], d.sunset[i]].join(';'));
+  });
+  descargar('clima_diario_'+slug(lastLoc.name)+'.csv', lines.join('\n'));
+}
+function csvHourly(){
+  if(!lastData) return;
+  const h=lastData.hourly;
+  const head=['hora','temp_c','sensacion_c','humedad_%','precip_mm','prob_lluvia_%','codigo','viento_kmh','rafaga_kmh'];
+  const lines=[head.join(';')];
+  h.time.forEach((t,i)=>{
+    lines.push([t, h.temperature_2m[i], h.apparent_temperature[i], h.relative_humidity_2m[i], h.precipitation[i],
+      h.precipitation_probability[i]??'', h.weather_code[i], h.wind_speed_10m[i], h.wind_gusts_10m[i]].join(';'));
+  });
+  descargar('clima_horario_'+slug(lastLoc.name)+'.csv', lines.join('\n'));
+}
+const slug = s => (s||'ubicacion').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'');
+
+// ---------- Favoritos (localStorage) ----------
+const FAVKEY='clima_favs_v1';
+function getFavs(){ try{return JSON.parse(localStorage.getItem(FAVKEY))||[]}catch(e){return[]} }
+function setFavs(f){ localStorage.setItem(FAVKEY, JSON.stringify(f)); renderFavs(); }
+function renderFavs(){
+  const c=$('favs'); const f=getFavs(); c.innerHTML='';
+  f.forEach((loc,idx)=>{
+    const chip=document.createElement('span'); chip.className='chip';
+    const t=document.createElement('span'); t.textContent='⭐ '+loc.name; t.style.cursor='pointer';
+    t.onclick=()=>{ seleccionarCoords(loc.name, loc.lat, loc.lon); consultar(loc.name); };
+    const x=document.createElement('span'); x.className='x'; x.textContent='✕';
+    x.onclick=(e)=>{ e.stopPropagation(); const g=getFavs(); g.splice(idx,1); setFavs(g); };
+    chip.appendChild(t); chip.appendChild(x); c.appendChild(chip);
+  });
+}
+function guardarFav(){
+  if(!lastLoc) return;
+  const f=getFavs();
+  if(f.some(x=>x.name===lastLoc.name)){ setStatus('Ya está en favoritos.'); return; }
+  f.push({name:lastLoc.name, lat:lastLoc.lat.toFixed(4), lon:lastLoc.lon.toFixed(4)});
+  setFavs(f); setStatus('Guardado en favoritos.');
+}
+
+// ---------- Modal buscador de coordenadas ----------
+function abrirFinder(){
+  $('finder').classList.remove('hidden');
+  $('fResults').innerHTML='';
+  const inp=$('fCity'); inp.value=''; setTimeout(()=>inp.focus(),50);
+}
+function cerrarFinder(){ $('finder').classList.add('hidden'); }
+
+// Geocoder combinado: primero Open-Meteo (ciudades), si no hay, OpenStreetMap (lugares/pasos/rutas)
+async function geocodificar(q){
+  // 1) Open-Meteo (localidades, en español, con provincia/país)
+  try{
+    const url=`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=10&language=es&format=json`;
+    const j=await (await fetch(url)).json();
+    if(j.results && j.results.length){
+      return j.results.map(l=>({
+        name:[l.name, l.admin1, l.country].filter(Boolean).join(', '),
+        lat:l.latitude, lon:l.longitude, fuente:'Open-Meteo'
+      }));
+    }
+  }catch(e){ /* sigue al fallback */ }
+
+  // 2) OpenStreetMap / Nominatim (pasos, cerros, rutas, puntos de interés)
+  try{
+    const url=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=10&accept-language=es&addressdetails=0`;
+    const arr=await (await fetch(url,{headers:{'Accept':'application/json'}})).json();
+    if(Array.isArray(arr) && arr.length){
+      return arr.map(l=>({
+        name:l.display_name, lat:parseFloat(l.lat), lon:parseFloat(l.lon), fuente:'OpenStreetMap'
+      }));
+    }
+  }catch(e){ /* sin resultados */ }
+
+  return [];
+}
+
+// Búsqueda directa en OpenStreetMap (pasos, cerros, rutas, ciudades). Prioriza AR+CL, si no, global.
+async function osmBuscar(q){
+  const pedir=async cc=>{
+    let u=`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=10&accept-language=es`;
+    if(cc) u+='&countrycodes='+cc;
+    const arr=await (await fetch(u)).json();
+    return Array.isArray(arr)?arr.map(l=>({name:l.display_name, lat:parseFloat(l.lat), lon:parseFloat(l.lon), fuente:'OpenStreetMap'})):[];
+  };
+  let r=await pedir('ar,cl');          // primero Argentina + Chile
+  if(!r.length) r=await pedir(null);   // si no hay, todo el mundo
+  return r;
+}
+
+async function buscarFinder(){
+  const q=$('fCity').value.trim();
+  const box=$('fResults');
+  if(!q){ box.innerHTML=''; return; }
+  box.innerHTML='<div class="sub" style="padding:4px 2px">Buscando en OpenStreetMap...</div>';
+  let results=[];
+  try{ results=await osmBuscar(q); }catch(e){ box.innerHTML='<div class="sub" style="padding:4px 2px">Error de conexión al buscar.</div>'; return; }
+  if(!results.length){ box.innerHTML='<div class="sub" style="padding:4px 2px">Sin resultados para "'+q+'". Probá con otra escritura o una ciudad cercana.</div>'; return; }
+  box.innerHTML='';
+  results.forEach(loc=>{
+    const el=document.createElement('div'); el.className='mres';
+    el.innerHTML=`<span class="nm">📍 ${loc.name}</span><span class="co">${loc.lat.toFixed(4)}, ${loc.lon.toFixed(4)}</span>`;
+    el.title=loc.fuente;
+    el.onclick=()=>{
+      seleccionarCoords(loc.name.split(',').slice(0,2).join(',').trim(), loc.lat, loc.lon);
+      $('fResults').innerHTML=''; $('fCity').value='';
+      cerrarFinder();
+    };
+    box.appendChild(el);
+  });
+}
+
+// ---------- Geolocalización ----------
+// Respaldo por IP (aprox.) cuando el GPS no está disponible (archivo local, http, o permiso denegado)
+async function ubicacionPorIP(motivo){
+  setStatus((motivo?motivo+' ':'')+'Estimando ubicación por IP...');
+  try{
+    const j=await (await fetch('https://ipwho.is/')).json();
+    if(j && j.success && j.latitude){
+      const nombre=[j.city, j.region, j.country].filter(Boolean).join(', ')||'Mi ubicación (aprox.)';
+      seleccionarCoords(nombre, j.latitude, j.longitude);
+      consultar(nombre);
+      setStatus('Ubicación aproximada por IP: '+nombre);
+      return;
+    }
+  }catch(e){}
+  setStatus('No se pudo obtener la ubicación. Usá "Buscar coordenadas".',true);
+}
+
+function miUbicacion(){
+  setStatus('Obteniendo ubicación...');
+  if(!navigator.geolocation){ ubicacionPorIP('Sin GPS.'); return; }
+  navigator.geolocation.getCurrentPosition(
+    p=>{
+      seleccionarCoords('Mi ubicación', p.coords.latitude, p.coords.longitude);
+      consultar('Mi ubicación');
+    },
+    e=>{
+      // 1=permiso denegado, 2=no disponible, 3=timeout → caemos a IP
+      ubicacionPorIP('GPS no disponible.');
+    },
+    { enableHighAccuracy:true, timeout:8000, maximumAge:60000 }
+  );
+}
+
+// ---------- Eventos ----------
+$('btnSearch').onclick=buscarCiudad;
+$('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
+$('btnCoords').onclick=()=>consultar(pendingName);
+$('btnGeo').onclick=miUbicacion;
+$('btnFinder').onclick=abrirFinder;
+$('fSearch').onclick=buscarFinder;
+$('fClose').onclick=cerrarFinder;
+$('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); });
+$('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
+$('btnFav').onclick=guardarFav;
+$('btnCsvDaily').onclick=csvDaily;
+$('btnCsvHourly').onclick=csvHourly;
+
+// Limpieza única: quitar el favorito precargado de Buenos Aires si quedó guardado
+if(!localStorage.getItem('clima_fav_bsas_limpiado')){
+  setFavs(getFavs().filter(f=>!(f.name==='Buenos Aires' && String(f.lat).startsWith('-34.60'))));
+  localStorage.setItem('clima_fav_bsas_limpiado','1');
+}
+
+// Inicio: mostrar favoritos guardados (sin precargar ninguno)
+renderFavs();
+
+// Restaurar la última ubicación consultada y traer su clima automáticamente
+(function restaurarUltima(){
+  try{
+    const u=JSON.parse(localStorage.getItem('clima_last'));
+    if(u && u.lat!=null && u.lon!=null){
+      if(u.days) $('days').value=u.days;
+      seleccionarCoords(u.name||'Última ubicación', u.lat, u.lon);
+      consultar(u.name);
+    }
+  }catch(e){}
+})();
+
+// Registrar el service worker (habilita instalar como app / abrir offline)
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(()=>{}); });
+}
+</script>
+</body>
+</html>
