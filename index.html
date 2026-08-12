@@ -61,16 +61,18 @@
   button:disabled{opacity:.5; cursor:not-allowed}
   .hint{font-size:12px; color:var(--muted); margin-top:8px}
   .selbox{
-    display:flex; align-items:center; gap:12px; margin-top:14px;
+    display:flex; align-items:center; gap:12px; margin-top:14px; cursor:pointer;
     background:linear-gradient(90deg,#e6f6ff,#fff1e2);
     border:1.5px solid var(--accent2); border-radius:12px; padding:12px 14px;
+    transition:box-shadow .15s, transform .05s;
   }
+  .selbox:hover{box-shadow:0 4px 14px rgba(44,166,224,.28)}
+  .selbox:active{transform:scale(.995)}
   .selbox .pin{font-size:24px}
   .selbox .txt{flex:1; min-width:0}
   .selbox .lbl{font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em}
   .selbox b{font-size:16px; color:var(--text); display:block; overflow:hidden; text-overflow:ellipsis}
-  .selbox .ok{font-size:12px; font-weight:700; color:#0a8f4a; white-space:nowrap}
-  @media (max-width:640px){ .selbox .ok{display:none} }
+  .selbox .ok{font-size:12px; font-weight:700; color:var(--accent2); white-space:nowrap}
   .row-consultar{margin-top:14px}
   #btnCoords{min-width:180px; padding:12px 22px}
   .favs{display:flex; gap:8px; flex-wrap:wrap; margin-top:12px}
@@ -223,13 +225,13 @@
       <button id="btnGeo" class="ghost">📍 Mi ubicación</button>
     </div>
 
-    <div id="selBox" class="selbox hidden">
+    <div id="selBox" class="selbox hidden" title="Ver en Google Maps">
       <span class="pin">📍</span>
       <div class="txt">
         <div class="lbl">Ubicación seleccionada</div>
         <b id="selName"></b>
       </div>
-      <span class="ok">✔ listo para consultar</span>
+      <span class="ok">🗺️ Ver en el mapa</span>
     </div>
 
 
@@ -619,6 +621,11 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+// Abrir la ubicación seleccionada en Google Maps
+$('selBox').onclick=()=>{
+  const lat=$('lat').value, lon=$('lon').value;
+  if(lat && lon) window.open(`https://www.google.com/maps?q=${lat},${lon}`, '_blank');
+};
 
 // Limpieza única: quitar el favorito precargado de Buenos Aires si quedó guardado
 if(!localStorage.getItem('clima_fav_bsas_limpiado')){
