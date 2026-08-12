@@ -237,6 +237,7 @@
         <input id="city" type="text" placeholder="Ej: Buenos Aires, Rosario, Mendoza..." autocomplete="off">
       </div>
       <button id="btnSearch">Buscar</button>
+      <button id="btnRutaOpen" class="ghost">🛣️ Clima en ruta</button>
     </div>
 
     <!-- lat/lon ocultos: se completan desde el buscador de coordenadas -->
@@ -318,24 +319,34 @@
     </div>
   </div>
 
-  <!-- CLIMA EN RUTA -->
-  <div class="card">
-    <div class="section-h"><h2>🛣️ Clima en ruta</h2></div>
-    <div class="ruta-form">
-      <div class="field"><label>Origen</label>
-        <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off">
-        <button id="btnRutaGeo" class="linklike">📍 Usar mi ubicación</button></div>
-      <div class="field"><label>Destino</label>
-        <input id="rDestino" type="text" placeholder="Ej: San Rafael" autocomplete="off"></div>
-      <div class="field"><label>Salida</label>
-        <input id="rSalida" type="datetime-local"></div>
-      <button id="btnRuta">🧭 Calcular</button>
-    </div>
-    <div id="rutaStatus" class="status" style="margin-top:8px"></div>
+  <!-- CLIMA EN RUTA (solo resultados) -->
+  <div id="cardRuta" class="card hidden">
+    <div class="section-h"><h2 id="rutaTitulo">🛣️ Clima en ruta</h2>
+      <button id="btnRutaEditar" class="ghost">✏️ Cambiar</button></div>
     <div id="rutaResumen" class="hidden"></div>
     <div id="rutaStops" class="ruta-stops"></div>
   </div>
 
+</div>
+
+<!-- MODAL: clima en ruta -->
+<div id="rutaModal" class="overlay hidden">
+  <div class="modal">
+    <h3>🛣️ Clima en ruta</h3>
+    <div class="sub">Origen, destino y hora de salida. Te muestro el clima en el trayecto.</div>
+    <div class="field" style="margin-bottom:10px"><label>Origen</label>
+      <input id="rOrigen" type="text" placeholder="Ej: Mendoza" autocomplete="off">
+      <button id="btnRutaGeo" class="linklike">📍 Usar mi ubicación</button></div>
+    <div class="field" style="margin-bottom:10px"><label>Destino</label>
+      <input id="rDestino" type="text" placeholder="Ej: San Rafael" autocomplete="off"></div>
+    <div class="field" style="margin-bottom:6px"><label>Salida</label>
+      <input id="rSalida" type="datetime-local"></div>
+    <div id="rutaStatus" class="status" style="margin-top:8px"></div>
+    <div class="foot" style="gap:10px">
+      <button id="rutaClose" class="ghost">Cerrar</button>
+      <button id="btnRuta">🧭 Calcular</button>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL: buscador de coordenadas -->
@@ -770,9 +781,20 @@ async function calcularRuta(){
 
   renderRuta(o,d,puntos,totalKm,total);
   rutaStatus('');
+  cerrarRutaModal();
 }
 
+// Abrir/cerrar el pop-up de Clima en ruta
+function abrirRutaModal(){
+  if(!$('rSalida').value){ const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); $('rSalida').value=n.toISOString().slice(0,16); }
+  $('rutaModal').classList.remove('hidden');
+  setTimeout(()=>$('rDestino').focus(),50);
+}
+function cerrarRutaModal(){ $('rutaModal').classList.add('hidden'); }
+
 function renderRuta(o,d,puntos,totalKm,total){
+  $('cardRuta').classList.remove('hidden');
+  $('rutaTitulo').textContent=`🛣️ ${o.name} → ${d.name}`;
   const gmaps=`https://www.google.com/maps/dir/?api=1&origin=${o.lat},${o.lon}&destination=${d.lat},${d.lon}&travelmode=driving`;
   $('rutaResumen').className='ruta-resumen';
   $('rutaResumen').innerHTML=
@@ -811,7 +833,14 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+// Pop-up de Clima en ruta
+$('btnRutaOpen').onclick=abrirRutaModal;
+$('btnRutaEditar').onclick=abrirRutaModal;
+$('rutaClose').onclick=cerrarRutaModal;
+$('rutaModal').addEventListener('click',e=>{ if(e.target.id==='rutaModal') cerrarRutaModal(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarRutaModal(); });
 $('btnRuta').onclick=calcularRuta;
+$('rDestino').addEventListener('keydown',e=>{ if(e.key==='Enter') calcularRuta(); });
 $('btnRutaGeo').onclick=async()=>{
   rutaStatus('Obteniendo tu ubicación...');
   const u=await obtenerUbicacionActual();
@@ -820,8 +849,6 @@ $('btnRutaGeo').onclick=async()=>{
 };
 // Si editan el origen a mano, dejar de usar las coords de "mi ubicación"
 $('rOrigen').addEventListener('input',()=>{ rutaOrigenCoords=null; });
-// Hora de salida por defecto = ahora (formato datetime-local)
-(function(){ const n=new Date(); n.setMinutes(n.getMinutes()-n.getTimezoneOffset()); $('rSalida').value=n.toISOString().slice(0,16); })();
 // Abrir la ubicación seleccionada en Google Maps
 $('selBox').onclick=()=>{
   const lat=$('lat').value, lon=$('lon').value;
