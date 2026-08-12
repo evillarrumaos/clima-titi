@@ -15,6 +15,9 @@
 <meta name="apple-mobile-web-app-title" content="Clima titi">
 <meta name="mobile-web-app-capable" content="yes">
 
+<!-- Mapa (Leaflet, local) -->
+<link rel="stylesheet" href="leaflet.css">
+
 <style>
   :root{
     --bg:#eaf6ff; --panel:#ffffff; --panel2:#f3f8fd; --border:#d6e6f2;
@@ -103,6 +106,14 @@
   .ac-item:hover{border-color:var(--accent)}
   .ruta-aviso{margin-top:10px; padding:10px 12px; border-radius:10px; font-weight:700; font-size:13px;
     background:#fff3e0; border:1px solid var(--warn); color:#8a5a00}
+  /* Mapa de ruta (Leaflet + OpenStreetMap) */
+  #rutaMapa{height:300px; width:100%; border-radius:10px; border:1px solid var(--border); margin-top:12px; background:#dfeaf2}
+  .leaflet-container{font:inherit}
+  .rmk{display:flex; align-items:center; gap:2px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
+    padding:2px 7px 2px 4px; font-weight:800; font-size:12px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--text)}
+  .rmk.lluvia{border-color:var(--accent2)}
+  .rmk.tormenta{border-color:var(--danger); color:var(--danger)}
+  .rmk.nieve{border-color:#4a97c9}
   .ruta-resumen{
     margin-top:12px; padding:12px 14px; border-radius:10px;
     background:linear-gradient(90deg,#e6f6ff,#fff1e2); border:1.5px solid var(--accent2);
@@ -327,6 +338,7 @@
     <div class="section-h"><h2 id="rutaTitulo">🛣️ Clima en ruta</h2>
       <button id="btnRutaEditar" class="ghost">✏️ Cambiar</button></div>
     <div id="rutaResumen" class="hidden"></div>
+    <div id="rutaMapa"></div>
     <div id="rutaStops" class="ruta-stops"></div>
   </div>
 
@@ -370,6 +382,7 @@
   </div>
 </div>
 
+<script src="leaflet.js"></script>
 <script>
 // ---- Tabla de códigos WMO (Open-Meteo weather_code) ----
 const WMO = {
@@ -813,7 +826,7 @@ async function calcularRuta(){
     p.prob=h.precipitation_probability[hi];
   });
 
-  renderRuta(o,d,puntos,totalKm,total);
+  renderRuta(o,d,puntos,totalKm,total,coords);
   rutaStatus('');
   cerrarRutaModal();
 }
@@ -826,7 +839,7 @@ function abrirRutaModal(){
 }
 function cerrarRutaModal(){ $('rutaModal').classList.add('hidden'); }
 
-function renderRuta(o,d,puntos,totalKm,total){
+function renderRuta(o,d,puntos,totalKm,total,coords){
   // Modo ruta: ocultar el clima del lugar y mostrar solo el trayecto
   $('cardCurrent').classList.add('hidden');
   $('cardDaily').classList.add('hidden');
@@ -838,7 +851,7 @@ function renderRuta(o,d,puntos,totalKm,total){
   $('rutaResumen').className='ruta-resumen';
   $('rutaResumen').innerHTML=
     `<div class="rr-k">🚗 <b>${Math.round(totalKm)} km</b> · ⏱️ <b>${fmtDur(total)}</b></div>`+
-    `<a href="${gmaps}" target="_blank">🗺️ Ver ruta en Google Maps</a>`;
+    `<a href="${gmaps}" target="_blank">🗺️ Ver en Google Maps</a>`;
 
   const BADGE={tormenta:'⛈️ Tormenta', lluvia:'🌧️ Lluvia', nieve:'🌨️ Nieve'};
   let alertas=0;
@@ -859,6 +872,36 @@ function renderRuta(o,d,puntos,totalKm,total){
   }).join('');
   const aviso = alertas ? `<div class="ruta-aviso">⚠️ Vas a encontrar lluvia o tormenta en ${alertas} ${alertas===1?'punto':'puntos'} del trayecto.</div>` : '';
   $('rutaStops').innerHTML=aviso+html;
+
+  dibujarMapaRuta(coords, puntos);
+}
+
+// Dibuja la ruta sobre OpenStreetMap (Leaflet) con marcadores del clima en cada punto
+let rutaMap=null, rutaCapa=null;
+function dibujarMapaRuta(coords, puntos){
+  if(typeof L==='undefined' || !coords || !coords.length) return;
+  if(!rutaMap){
+    rutaMap=L.map('rutaMapa',{zoomControl:true});
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:17, attribution:'© OpenStreetMap'}).addTo(rutaMap);
+  }
+  if(rutaCapa) rutaMap.removeLayer(rutaCapa);
+  rutaCapa=L.layerGroup().addTo(rutaMap);
+
+  const linea=coords.map(c=>[c[1], c[0]]);   // [lat,lon]
+  L.polyline(linea,{color:'#2ca6e0', weight:5, opacity:.85}).addTo(rutaCapa);
+
+  puntos.forEach(p=>{
+    const [desc,ico]=wmo(p.code);
+    const cls=claseClima(p.code);
+    const temp=(p.temp==null?'':p.temp+'°');
+    const hora=p.eta.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
+    const icon=L.divIcon({className:'', html:`<div class="rmk ${cls}">${ico}<span>${temp}</span></div>`, iconSize:null, iconAnchor:[0,0]});
+    L.marker([p.lat,p.lon],{icon}).addTo(rutaCapa)
+      .bindPopup(`<b>${p.nombre}</b><br>${hora} · ${desc} · ${temp}`);
+  });
+
+  rutaMap.fitBounds(L.polyline(linea).getBounds(), {padding:[30,30]});
+  setTimeout(()=>rutaMap.invalidateSize(),200);
 }
 
 // ---------- Eventos ----------
