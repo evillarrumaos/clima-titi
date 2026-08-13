@@ -1,6 +1,6 @@
 // Service worker mínimo: cachea la "cáscara" de la app para que instale y abra offline.
 // Las llamadas a las APIs (Open-Meteo, OpenStreetMap, ipwho.is) NO se cachean: van siempre a la red.
-const CACHE = 'clima-titi-v13';
+const CACHE = 'clima-titi-v14';
 const SHELL = [
   './',
   './index.html',

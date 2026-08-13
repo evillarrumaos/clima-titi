@@ -156,6 +156,13 @@
   .day:active{transform:scale(.98)}
   .day .verhora{font-size:10px; color:var(--accent2); font-weight:700; margin-top:6px}
   /* Pop-up detalle del día */
+  .dia-head{display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px}
+  .dia-nav-wrap{display:flex; align-items:center; gap:8px; min-width:0}
+  .dia-nav-wrap h3{margin:0; font-size:16px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dia-nav{background:var(--panel2) !important; color:var(--accent2) !important; border:1px solid var(--border) !important;
+    box-shadow:none !important; width:34px; height:34px; border-radius:50%; font-size:20px; line-height:1; padding:0 !important; font-weight:800; flex:0 0 auto}
+  .dia-nav:hover{border-color:var(--accent2) !important}
+  .dia-nav:disabled{opacity:.35; cursor:not-allowed}
   .dia-resumen{font-size:14px; color:var(--text); margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--border)}
   .dia-lista{display:flex; flex-direction:column; gap:2px; max-height:60vh; overflow:auto}
   .dh-row{display:flex; align-items:center; gap:10px; padding:8px 6px; border-bottom:1px solid var(--border)}
@@ -386,8 +393,12 @@
 <!-- MODAL: detalle por hora de un día -->
 <div id="diaModal" class="overlay hidden">
   <div class="modal">
-    <div class="mapa-head">
-      <h3 id="diaTitulo">Detalle del día</h3>
+    <div class="dia-head">
+      <div class="dia-nav-wrap">
+        <button id="diaPrev" class="dia-nav" title="Día anterior">‹</button>
+        <h3 id="diaTitulo">Detalle del día</h3>
+        <button id="diaNext" class="dia-nav" title="Día siguiente">›</button>
+      </div>
       <button id="diaClose" class="ghost">Cerrar</button>
     </div>
     <div id="diaResumen" class="dia-resumen"></div>
@@ -498,19 +509,18 @@ function render(j, loc){
   $('cardDaily').classList.remove('hidden');
 }
 
-// Pop-up con el detalle por hora de un día
-function abrirDiaDetalle(fecha){
+// Pop-up con el detalle por hora de un día (con navegación entre días)
+let diaIdx=0;
+function mostrarDia(idx){
   if(!lastData) return;
   const h=lastData.hourly, d=lastData.daily;
-  const di=d.time.indexOf(fecha);
+  idx=Math.max(0, Math.min(idx, d.time.length-1));
+  diaIdx=idx;
+  const fecha=d.time[idx];
   const titulo=new Date(fecha+'T00:00').toLocaleDateString('es-AR',{weekday:'long', day:'numeric', month:'long'});
   $('diaTitulo').textContent=titulo.charAt(0).toUpperCase()+titulo.slice(1);
-  // Resumen del día
-  if(di>=0){
-    const [ds,dic]=wmo(d.weather_code[di]);
-    $('diaResumen').innerHTML=`${dic} ${ds} · máx <b>${Math.round(d.temperature_2m_max[di])}°</b> / mín <b>${Math.round(d.temperature_2m_min[di])}°</b> · 💧 ${d.precipitation_probability_max[di]??0}%`;
-  } else { $('diaResumen').textContent=''; }
-  // Horas de ese día
+  const [ds,dic]=wmo(d.weather_code[idx]);
+  $('diaResumen').innerHTML=`${dic} ${ds} · máx <b>${Math.round(d.temperature_2m_max[idx])}°</b> / mín <b>${Math.round(d.temperature_2m_min[idx])}°</b> · 💧 ${d.precipitation_probability_max[idx]??0}%`;
   const filas=[];
   for(let i=0;i<h.time.length;i++){
     if(!h.time[i].startsWith(fecha)) continue;
@@ -527,6 +537,14 @@ function abrirDiaDetalle(fecha){
     </div>`);
   }
   $('diaLista').innerHTML=filas.join('') || '<div class="sub">Sin datos horarios para este día.</div>';
+  $('diaLista').scrollTop=0;
+  $('diaPrev').disabled = idx<=0;
+  $('diaNext').disabled = idx>=d.time.length-1;
+}
+function abrirDiaDetalle(fecha){
+  if(!lastData) return;
+  const idx=lastData.daily.time.indexOf(fecha);
+  mostrarDia(idx<0?0:idx);
   $('diaModal').classList.remove('hidden');
 }
 function cerrarDia(){ $('diaModal').classList.add('hidden'); }
@@ -948,6 +966,8 @@ $('btnFav').onclick=guardarFav;
 // Pop-up de detalle del día (clic en una tarjeta de día)
 $('days-grid').addEventListener('click',e=>{ const c=e.target.closest('.day'); if(c&&c.dataset.fecha) abrirDiaDetalle(c.dataset.fecha); });
 $('diaClose').onclick=cerrarDia;
+$('diaPrev').onclick=()=>mostrarDia(diaIdx-1);
+$('diaNext').onclick=()=>mostrarDia(diaIdx+1);
 $('diaModal').addEventListener('click',e=>{ if(e.target.id==='diaModal') cerrarDia(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarDia(); });
 // Pop-up de Clima en ruta
