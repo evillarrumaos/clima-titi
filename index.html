@@ -109,8 +109,10 @@
   /* Mapa de ruta (Leaflet + OpenStreetMap) */
   #rutaMapa{height:300px; width:100%; border-radius:10px; border:1px solid var(--border); margin-top:12px; background:#dfeaf2}
   .leaflet-container{font:inherit}
-  .rmk{display:flex; align-items:center; gap:2px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
-    padding:2px 7px 2px 4px; font-weight:800; font-size:12px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--text)}
+  .rmk{display:flex; align-items:center; gap:3px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
+    padding:2px 8px 2px 6px; font-weight:800; font-size:12px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--text)}
+  .rmk .rmk-h{color:var(--accent2); font-size:11px}
+  .rmk.tormenta .rmk-h{color:var(--danger)}
   .rmk.lluvia{border-color:var(--accent2)}
   .rmk.tormenta{border-color:var(--danger); color:var(--danger)}
   .rmk.nieve{border-color:#4a97c9}
@@ -784,8 +786,8 @@ async function calcularRuta(){
   const totalKm=route.distance/1000;
   const salida = $('rSalida').value ? new Date($('rSalida').value) : new Date();
 
-  // Puntos de muestreo a lo largo del trayecto (según tiempo)
-  const n=Math.min(8, Math.max(3, Math.round(total/3600)+1));
+  // Puntos de muestreo a lo largo del trayecto (~1 cada 35 min, hasta 12)
+  const n=Math.min(12, Math.max(4, Math.round(total/2100)+1));
   const puntos=[];
   for(let k=0;k<n;k++){
     const t=(total*k)/(n-1);
@@ -808,11 +810,14 @@ async function calcularRuta(){
   }catch(e){ rutaStatus('Error al consultar el clima.',true); return; }
 
   // Nombres: origen/destino ya los tengo; los intermedios por reverse geocoding (con pausa por límite de OSM)
-  rutaStatus('Ubicando los puntos del trayecto...');
   for(let i=0;i<puntos.length;i++){
     if(i===0){ puntos[i].nombre=o.name; }
     else if(i===puntos.length-1){ puntos[i].nombre=d.name; }
-    else { puntos[i].nombre=await reverseNombre(puntos[i].lat, puntos[i].lon); await new Promise(r=>setTimeout(r,1100)); }
+    else {
+      rutaStatus(`Ubicando puntos del trayecto (${i}/${puntos.length-2})...`);
+      puntos[i].nombre=await reverseNombre(puntos[i].lat, puntos[i].lon);
+      await new Promise(r=>setTimeout(r,1100));
+    }
   }
 
   // Emparejar clima por hora (UTC) de cada ETA
@@ -895,7 +900,7 @@ function dibujarMapaRuta(coords, puntos){
     const cls=claseClima(p.code);
     const temp=(p.temp==null?'':p.temp+'°');
     const hora=p.eta.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
-    const icon=L.divIcon({className:'', html:`<div class="rmk ${cls}">${ico}<span>${temp}</span></div>`, iconSize:null, iconAnchor:[0,0]});
+    const icon=L.divIcon({className:'', html:`<div class="rmk ${cls}"><b class="rmk-h">${hora}</b>${ico}<span>${temp}</span></div>`, iconSize:null, iconAnchor:[0,0]});
     L.marker([p.lat,p.lon],{icon}).addTo(rutaCapa)
       .bindPopup(`<b>${p.nombre}</b><br>${hora} · ${desc} · ${temp}`);
   });
