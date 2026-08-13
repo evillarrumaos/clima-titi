@@ -118,6 +118,7 @@
   .mapa-ctrl button{padding:8px 12px}
   .mapa-time{font-weight:800; color:var(--accent2); min-width:52px; text-align:right}
   .mapa-leg{font-size:11px; color:var(--muted); margin-top:8px}
+  button.ghost.activo{background:var(--accent2) !important; color:#fff !important; border-color:var(--accent2) !important}
   .leaflet-container{font:inherit}
   .rmk{display:flex; align-items:center; gap:3px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
     padding:2px 8px 2px 6px; font-weight:800; font-size:12px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--text)}
@@ -181,6 +182,7 @@
   .dh-ico{font-size:20px; width:26px; text-align:center}
   .dh-desc{flex:1; min-width:0; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
   .dh-lluvia{color:var(--accent2); font-weight:700; margin-left:6px}
+  .dh-uv{display:inline-block; font-size:10px; font-weight:800; color:#fff; padding:1px 6px; border-radius:999px; margin-left:6px}
   .dh-viento{font-size:12px; color:var(--muted); white-space:nowrap}
   .dh-temp{font-weight:800; font-size:16px; width:44px; text-align:right}
 
@@ -424,7 +426,10 @@
   <div class="modal modal-mapa">
     <div class="mapa-head">
       <h3 id="satTitulo">🛰️ Satélite</h3>
-      <button id="satClose" class="ghost">Cerrar</button>
+      <div style="display:flex; gap:8px">
+        <button id="satRadar" class="ghost">🌧️ Lluvia</button>
+        <button id="satClose" class="ghost">Cerrar</button>
+      </div>
     </div>
     <div id="satMapa"></div>
     <div class="mapa-ctrl">
@@ -482,7 +487,7 @@ async function consultar(nombre){
   const params = new URLSearchParams({
     latitude:lat, longitude:lon, timezone:'auto', forecast_days:days,
     current:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,wind_direction_10m,surface_pressure',
-    hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m',
+    hourly:'temperature_2m,apparent_temperature,relative_humidity_2m,precipitation,precipitation_probability,weather_code,wind_speed_10m,wind_gusts_10m,uv_index',
     daily:'weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,sunrise,sunset'
   });
   try{
@@ -539,6 +544,15 @@ function render(j, loc){
   $('cardDaily').classList.remove('hidden');
 }
 
+// Color del índice UV según nivel (bajo→extremo)
+function uvColor(uv){
+  if(uv<3) return '#3aa757';    // bajo
+  if(uv<6) return '#e0a800';    // moderado
+  if(uv<8) return '#f97316';    // alto
+  if(uv<11) return '#ef4444';   // muy alto
+  return '#8b5cf6';             // extremo
+}
+
 // Pop-up con el detalle por hora de un día (con navegación entre días)
 let diaIdx=0;
 function mostrarDia(idx){
@@ -558,10 +572,12 @@ function mostrarDia(idx){
     const hora=h.time[i].slice(11,16);
     const prob=h.precipitation_probability[i];
     const lluvia=(prob!=null&&prob>0)?`<span class="dh-lluvia">💧${prob}%</span>`:'';
+    const uv=h.uv_index?h.uv_index[i]:null;
+    const uvChip=(uv!=null&&uv>=1)?`<span class="dh-uv" style="background:${uvColor(uv)}" title="Índice UV">UV ${Math.round(uv)}</span>`:'';
     filas.push(`<div class="dh-row">
       <div class="dh-hora">${hora}</div>
       <div class="dh-ico">${hi}</div>
-      <div class="dh-desc">${hd}${lluvia}</div>
+      <div class="dh-desc">${hd}${lluvia}${uvChip}</div>
       <div class="dh-viento">🌬️ ${Math.round(h.wind_speed_10m[i])}</div>
       <div class="dh-temp">${Math.round(h.temperature_2m[i])}°</div>
     </div>`);
@@ -984,6 +1000,7 @@ function dibujarMapaRuta(coords, puntos){
 
 // ---------- Satélite (GOES GeoColor sobre OpenStreetMap, animado) ----------
 let satMap=null, satMarker=null, satLayers=[], satTimes=[], satIdx=0, satTimer=null;
+let satRadarLayer=null, satRadarHost=null, satRadarPath=null;
 const GOES_BASE='https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default';
 const goesUrl=ts=>`${GOES_BASE}/${ts}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
 
@@ -1006,6 +1023,8 @@ async function abrirSat(){
   } else {
     satMap.setView([lat,lon],5); satMarker.setLatLng([lat,lon]);
   }
+  // Reiniciar radar apagado en cada apertura (para evitar quedar debajo de las nuevas capas)
+  if(satRadarLayer){ satMap.removeLayer(satRadarLayer); satRadarLayer=null; $('satRadar').classList.remove('activo'); }
   setTimeout(()=>satMap.invalidateSize(),150);
 
   // Buscar los horarios disponibles de las últimas horas (cada 10 min, con ~40 min de latencia)
@@ -1046,6 +1065,24 @@ function cerrarSat(){
   $('satModal').classList.add('hidden');
 }
 
+// Toggle: capa de radar de lluvia (RainViewer) sobre el satélite
+async function satToggleRadar(){
+  if(satRadarLayer){ satMap.removeLayer(satRadarLayer); satRadarLayer=null; $('satRadar').classList.remove('activo'); return; }
+  if(!satRadarPath){
+    try{
+      const j=await (await fetch('https://api.rainviewer.com/public/weather-maps.json')).json();
+      satRadarHost=j.host;
+      const past=(j.radar&&j.radar.past)||[], now=(j.radar&&j.radar.nowcast)||[];
+      const frames=[...past, ...now];
+      if(frames.length) satRadarPath=frames[past.length? past.length-1 : 0].path;
+    }catch(e){}
+  }
+  if(!satRadarPath || !satMap) return;
+  satRadarLayer=L.tileLayer(`${satRadarHost}${satRadarPath}/256/{z}/{x}/{y}/4/1_1.png`,{opacity:.75, maxZoom:12}).addTo(satMap);
+  satRadarLayer.bringToFront();
+  $('satRadar').classList.add('activo');
+}
+
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
@@ -1061,6 +1098,7 @@ $('btnFav').onclick=guardarFav;
 $('btnSat').onclick=abrirSat;
 $('satClose').onclick=cerrarSat;
 $('satPlay').onclick=satPlayPause;
+$('satRadar').onclick=satToggleRadar;
 $('satSlider').addEventListener('input',e=>mostrarSatFrame(+e.target.value));
 $('satModal').addEventListener('click',e=>{ if(e.target.id==='satModal') cerrarSat(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarSat(); });
