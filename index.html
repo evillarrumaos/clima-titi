@@ -108,6 +108,12 @@
     background:#fff3e0; border:1px solid var(--warn); color:#8a5a00}
   /* Mapa de ruta (Leaflet + OpenStreetMap) */
   #rutaMapa{height:300px; width:100%; border-radius:10px; border:1px solid var(--border); margin-top:12px; background:#dfeaf2}
+  /* Mapa satelital */
+  .modal-mapa{max-width:640px}
+  .mapa-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
+  .mapa-head h3{margin:0; font-size:16px}
+  #satMapa{height:58vh; width:100%; border-radius:10px; border:1px solid var(--border); background:#0b1a2a}
+  .mapa-leg{font-size:11px; color:var(--muted); margin-top:8px}
   .leaflet-container{font:inherit}
   .rmk{display:flex; align-items:center; gap:3px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
     padding:2px 8px 2px 6px; font-weight:800; font-size:12px; white-space:nowrap; box-shadow:0 1px 4px rgba(0,0,0,.25); color:var(--text)}
@@ -317,7 +323,10 @@
   <div id="cardCurrent" class="card hidden">
     <div class="section-h">
       <h2 id="locName">—</h2>
-      <button id="btnFav" class="ghost">☆ Guardar</button>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="btnSat" class="ghost">🛰️ Satélite</button>
+        <button id="btnFav" class="ghost">☆ Guardar</button>
+      </div>
     </div>
     <div class="current">
       <div class="ico" id="curIco">–</div>
@@ -403,6 +412,18 @@
     </div>
     <div id="diaResumen" class="dia-resumen"></div>
     <div id="diaLista" class="dia-lista"></div>
+  </div>
+</div>
+
+<!-- MODAL: satélite (GOES GeoColor sobre OpenStreetMap) -->
+<div id="satModal" class="overlay hidden">
+  <div class="modal modal-mapa">
+    <div class="mapa-head">
+      <h3 id="satTitulo">🛰️ Satélite</h3>
+      <button id="satClose" class="ghost">Cerrar</button>
+    </div>
+    <div id="satMapa"></div>
+    <div class="mapa-leg">Imagen satelital <b>GOES-East GeoColor</b> (NASA GIBS), última disponible · Base: OpenStreetMap. El punto naranja es la ubicación.</div>
   </div>
 </div>
 
@@ -952,6 +973,29 @@ function dibujarMapaRuta(coords, puntos){
   setTimeout(()=>rutaMap.invalidateSize(),200);
 }
 
+// ---------- Satélite (GOES GeoColor sobre OpenStreetMap) ----------
+let satMap=null, satCapa=null, satMarker=null;
+function abrirSat(){
+  const lat=parseFloat($('lat').value), lon=parseFloat($('lon').value);
+  if(isNaN(lat)||isNaN(lon) || typeof L==='undefined') return;
+  $('satTitulo').textContent='🛰️ '+($('selName').textContent||'Satélite');
+  $('satModal').classList.remove('hidden');
+  if(!satMap){
+    satMap=L.map('satMapa',{zoomControl:true}).setView([lat,lon],5);
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12, attribution:'© OpenStreetMap'}).addTo(satMap);
+    satCapa=L.tileLayer(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png',
+      {maxNativeZoom:7, maxZoom:12, opacity:.8, attribution:'NASA GIBS · GOES-East'}).addTo(satMap);
+    satMarker=L.circleMarker([lat,lon],{radius:8,color:'#ff8a3d',weight:3,fillColor:'#ff8a3d',fillOpacity:.5}).addTo(satMap);
+  } else {
+    satMap.setView([lat,lon],5);
+    satMarker.setLatLng([lat,lon]);
+    if(satCapa) satCapa.redraw();
+  }
+  setTimeout(()=>satMap.invalidateSize(),150);
+}
+function cerrarSat(){ $('satModal').classList.add('hidden'); }
+
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
 $('city').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarCiudad(); });
@@ -963,6 +1007,11 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+// Satélite
+$('btnSat').onclick=abrirSat;
+$('satClose').onclick=cerrarSat;
+$('satModal').addEventListener('click',e=>{ if(e.target.id==='satModal') cerrarSat(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarSat(); });
 // Pop-up de detalle del día (clic en una tarjeta de día)
 $('days-grid').addEventListener('click',e=>{ const c=e.target.closest('.day'); if(c&&c.dataset.fecha) abrirDiaDetalle(c.dataset.fecha); });
 $('diaClose').onclick=cerrarDia;
