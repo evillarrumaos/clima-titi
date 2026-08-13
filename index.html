@@ -151,6 +151,21 @@
   .day .min{color:var(--muted)}
   .day .rain{font-size:12px; color:var(--accent2); margin-top:4px}
   .day .sun{font-size:12px; color:var(--muted); margin-top:4px}
+  .day{cursor:pointer; transition:box-shadow .15s, transform .05s}
+  .day:hover{box-shadow:0 4px 14px rgba(44,166,224,.25); border-color:var(--accent2)}
+  .day:active{transform:scale(.98)}
+  .day .verhora{font-size:10px; color:var(--accent2); font-weight:700; margin-top:6px}
+  /* Pop-up detalle del día */
+  .dia-resumen{font-size:14px; color:var(--text); margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid var(--border)}
+  .dia-lista{display:flex; flex-direction:column; gap:2px; max-height:60vh; overflow:auto}
+  .dh-row{display:flex; align-items:center; gap:10px; padding:8px 6px; border-bottom:1px solid var(--border)}
+  .dh-row:last-child{border-bottom:none}
+  .dh-hora{font-weight:800; color:var(--accent2); width:44px}
+  .dh-ico{font-size:20px; width:26px; text-align:center}
+  .dh-desc{flex:1; min-width:0; font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .dh-lluvia{color:var(--accent2); font-weight:700; margin-left:6px}
+  .dh-viento{font-size:12px; color:var(--muted); white-space:nowrap}
+  .dh-temp{font-weight:800; font-size:16px; width:44px; text-align:right}
 
   table{width:100%; border-collapse:collapse; font-size:13px; margin-top:8px}
   th,td{padding:8px 10px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap}
@@ -319,22 +334,6 @@
     <div class="days" id="days-grid"></div>
   </div>
 
-  <!-- HORARIO -->
-  <div id="cardHourly" class="card hidden">
-    <div class="section-h">
-      <h2>Detalle horario (próximas 48 h)</h2>
-    </div>
-    <div class="scroll">
-      <table id="hourly">
-        <thead><tr>
-          <th>Hora</th><th>Temp °C</th><th>Sens. °C</th><th>Humedad %</th>
-          <th>Precip. mm</th><th>Prob. lluvia %</th><th>Viento km/h</th><th>Ráfaga km/h</th>
-        </tr></thead>
-        <tbody></tbody>
-      </table>
-    </div>
-  </div>
-
   <!-- CLIMA EN RUTA (solo resultados) -->
   <div id="cardRuta" class="card hidden">
     <div class="section-h"><h2 id="rutaTitulo">🛣️ Clima en ruta</h2>
@@ -381,6 +380,18 @@
     <div class="foot">
       <button id="fClose" class="ghost">Cerrar</button>
     </div>
+  </div>
+</div>
+
+<!-- MODAL: detalle por hora de un día -->
+<div id="diaModal" class="overlay hidden">
+  <div class="modal">
+    <div class="mapa-head">
+      <h3 id="diaTitulo">Detalle del día</h3>
+      <button id="diaClose" class="ghost">Cerrar</button>
+    </div>
+    <div id="diaResumen" class="dia-resumen"></div>
+    <div id="diaLista" class="dia-lista"></div>
   </div>
 </div>
 
@@ -476,34 +487,49 @@ function render(j, loc){
   $('days-grid').innerHTML=d.time.map((t,i)=>{
     const [ds,di]=wmo(d.weather_code[i]);
     const wd=new Date(t+'T00:00').toLocaleDateString('es-AR',{weekday:'short', day:'numeric', month:'short'});
-    return `<div class="day" title="${ds}">
+    return `<div class="day" data-fecha="${t}" title="Ver detalle por hora">
       <div class="d">${wd}</div><div class="i">${di}</div>
       <div><span class="max">${Math.round(d.temperature_2m_max[i])}°</span> / <span class="min">${Math.round(d.temperature_2m_min[i])}°</span></div>
       <div class="rain">💧 ${d.precipitation_sum[i]} mm · ${d.precipitation_probability_max[i]??0}%</div>
       <div class="sun">🌅 ${hhmm(d.sunrise[i])} · 🌇 ${hhmm(d.sunset[i])}</div>
+      <div class="verhora">👆 ver por hora</div>
     </div>`;
   }).join('');
   $('cardDaily').classList.remove('hidden');
-
-  // Horario (48h desde ahora)
-  const h=j.hourly, now=new Date(c.time).getTime();
-  let start=h.time.findIndex(t=>new Date(t).getTime()>=now); if(start<0)start=0;
-  const rows=[];
-  for(let i=start;i<Math.min(start+48,h.time.length);i++){
-    rows.push(`<tr>
-      <td>${new Date(h.time[i]).toLocaleString('es-AR',{weekday:'short',hour:'2-digit',minute:'2-digit',hour12:false})}</td>
-      <td>${Math.round(h.temperature_2m[i])}</td>
-      <td>${Math.round(h.apparent_temperature[i])}</td>
-      <td>${h.relative_humidity_2m[i]}</td>
-      <td>${h.precipitation[i]}</td>
-      <td>${h.precipitation_probability[i]??''}</td>
-      <td>${Math.round(h.wind_speed_10m[i])}</td>
-      <td>${Math.round(h.wind_gusts_10m[i])}</td>
-    </tr>`);
-  }
-  $('hourly').querySelector('tbody').innerHTML=rows.join('');
-  $('cardHourly').classList.remove('hidden');
 }
+
+// Pop-up con el detalle por hora de un día
+function abrirDiaDetalle(fecha){
+  if(!lastData) return;
+  const h=lastData.hourly, d=lastData.daily;
+  const di=d.time.indexOf(fecha);
+  const titulo=new Date(fecha+'T00:00').toLocaleDateString('es-AR',{weekday:'long', day:'numeric', month:'long'});
+  $('diaTitulo').textContent=titulo.charAt(0).toUpperCase()+titulo.slice(1);
+  // Resumen del día
+  if(di>=0){
+    const [ds,dic]=wmo(d.weather_code[di]);
+    $('diaResumen').innerHTML=`${dic} ${ds} · máx <b>${Math.round(d.temperature_2m_max[di])}°</b> / mín <b>${Math.round(d.temperature_2m_min[di])}°</b> · 💧 ${d.precipitation_probability_max[di]??0}%`;
+  } else { $('diaResumen').textContent=''; }
+  // Horas de ese día
+  const filas=[];
+  for(let i=0;i<h.time.length;i++){
+    if(!h.time[i].startsWith(fecha)) continue;
+    const [hd,hi]=wmo(h.weather_code[i]);
+    const hora=h.time[i].slice(11,16);
+    const prob=h.precipitation_probability[i];
+    const lluvia=(prob!=null&&prob>0)?`<span class="dh-lluvia">💧${prob}%</span>`:'';
+    filas.push(`<div class="dh-row">
+      <div class="dh-hora">${hora}</div>
+      <div class="dh-ico">${hi}</div>
+      <div class="dh-desc">${hd}${lluvia}</div>
+      <div class="dh-viento">🌬️ ${Math.round(h.wind_speed_10m[i])}</div>
+      <div class="dh-temp">${Math.round(h.temperature_2m[i])}°</div>
+    </div>`);
+  }
+  $('diaLista').innerHTML=filas.join('') || '<div class="sub">Sin datos horarios para este día.</div>';
+  $('diaModal').classList.remove('hidden');
+}
+function cerrarDia(){ $('diaModal').classList.add('hidden'); }
 
 // ---------- CSV ----------
 function descargar(nombre, csv){
@@ -848,7 +874,6 @@ function renderRuta(o,d,puntos,totalKm,total,coords){
   // Modo ruta: ocultar el clima del lugar y mostrar solo el trayecto
   $('cardCurrent').classList.add('hidden');
   $('cardDaily').classList.add('hidden');
-  $('cardHourly').classList.add('hidden');
   $('selBox').classList.add('hidden');
   $('cardRuta').classList.remove('hidden');
   $('rutaTitulo').textContent=`🛣️ ${o.name} → ${d.name}`;
@@ -920,6 +945,11 @@ $('fCity').addEventListener('keydown',e=>{ if(e.key==='Enter') buscarFinder(); }
 $('finder').addEventListener('click',e=>{ if(e.target.id==='finder') cerrarFinder(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarFinder(); });
 $('btnFav').onclick=guardarFav;
+// Pop-up de detalle del día (clic en una tarjeta de día)
+$('days-grid').addEventListener('click',e=>{ const c=e.target.closest('.day'); if(c&&c.dataset.fecha) abrirDiaDetalle(c.dataset.fecha); });
+$('diaClose').onclick=cerrarDia;
+$('diaModal').addEventListener('click',e=>{ if(e.target.id==='diaModal') cerrarDia(); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarDia(); });
 // Pop-up de Clima en ruta
 $('btnRutaOpen').onclick=abrirRutaModal;
 $('btnRutaEditar').onclick=abrirRutaModal;
