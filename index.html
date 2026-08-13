@@ -112,7 +112,11 @@
   .modal-mapa{max-width:640px}
   .mapa-head{display:flex; justify-content:space-between; align-items:center; margin-bottom:10px}
   .mapa-head h3{margin:0; font-size:16px}
-  #satMapa{height:58vh; width:100%; border-radius:10px; border:1px solid var(--border); background:#0b1a2a}
+  #satMapa{height:52vh; width:100%; border-radius:10px; border:1px solid var(--border); background:#0b1a2a}
+  .mapa-ctrl{display:flex; align-items:center; gap:10px; margin-top:10px}
+  .mapa-ctrl input[type=range]{flex:1}
+  .mapa-ctrl button{padding:8px 12px}
+  .mapa-time{font-weight:800; color:var(--accent2); min-width:52px; text-align:right}
   .mapa-leg{font-size:11px; color:var(--muted); margin-top:8px}
   .leaflet-container{font:inherit}
   .rmk{display:flex; align-items:center; gap:3px; background:#fff; border:2px solid var(--accent2); border-radius:999px;
@@ -423,7 +427,12 @@
       <button id="satClose" class="ghost">Cerrar</button>
     </div>
     <div id="satMapa"></div>
-    <div class="mapa-leg">Imagen satelital <b>GOES-East GeoColor</b> (NASA GIBS), última disponible · Base: OpenStreetMap. El punto naranja es la ubicación.</div>
+    <div class="mapa-ctrl">
+      <button id="satPlay" class="ghost">▶️</button>
+      <input id="satSlider" type="range" min="0" max="0" value="0" step="1">
+      <span id="satTime" class="mapa-time">—</span>
+    </div>
+    <div class="mapa-leg">Satélite <b>GOES-East GeoColor</b> (NASA GIBS), últimas horas · Base: OpenStreetMap. El punto naranja es la ubicación.</div>
   </div>
 </div>
 
@@ -973,9 +982,19 @@ function dibujarMapaRuta(coords, puntos){
   setTimeout(()=>rutaMap.invalidateSize(),200);
 }
 
-// ---------- Satélite (GOES GeoColor sobre OpenStreetMap) ----------
-let satMap=null, satCapa=null, satMarker=null;
-function abrirSat(){
+// ---------- Satélite (GOES GeoColor sobre OpenStreetMap, animado) ----------
+let satMap=null, satMarker=null, satLayers=[], satTimes=[], satIdx=0, satTimer=null;
+const GOES_BASE='https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default';
+const goesUrl=ts=>`${GOES_BASE}/${ts}/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png`;
+
+// Verifica si un horario (UTC ISO) tiene imagen disponible (probando un tile de Sudamérica)
+function satProbe(ts){
+  return new Promise(res=>{ const im=new Image();
+    im.onload=()=>res(ts); im.onerror=()=>res(null);
+    im.src=`${GOES_BASE}/${ts}/GoogleMapsCompatible_Level7/3/4/2.png`; });
+}
+
+async function abrirSat(){
   const lat=parseFloat($('lat').value), lon=parseFloat($('lon').value);
   if(isNaN(lat)||isNaN(lon) || typeof L==='undefined') return;
   $('satTitulo').textContent='🛰️ '+($('selName').textContent||'Satélite');
@@ -983,18 +1002,49 @@ function abrirSat(){
   if(!satMap){
     satMap=L.map('satMapa',{zoomControl:true}).setView([lat,lon],5);
     L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12, attribution:'© OpenStreetMap'}).addTo(satMap);
-    satCapa=L.tileLayer(
-      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/GOES-East_ABI_GeoColor/default/default/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png',
-      {maxNativeZoom:7, maxZoom:12, opacity:.8, attribution:'NASA GIBS · GOES-East'}).addTo(satMap);
     satMarker=L.circleMarker([lat,lon],{radius:8,color:'#ff8a3d',weight:3,fillColor:'#ff8a3d',fillOpacity:.5}).addTo(satMap);
   } else {
-    satMap.setView([lat,lon],5);
-    satMarker.setLatLng([lat,lon]);
-    if(satCapa) satCapa.redraw();
+    satMap.setView([lat,lon],5); satMarker.setLatLng([lat,lon]);
   }
   setTimeout(()=>satMap.invalidateSize(),150);
+
+  // Buscar los horarios disponibles de las últimas horas (cada 10 min, con ~40 min de latencia)
+  $('satTime').textContent='...';
+  const now=Date.now(), cand=new Set();
+  for(let m=40; m<=280; m+=10){ cand.add(new Date(Math.floor((now-m*60000)/600000)*600000).toISOString().slice(0,19)+'Z'); }
+  let ok=(await Promise.all([...cand].map(satProbe))).filter(Boolean).sort();
+  ok=ok.slice(-12);  // últimos ~2 h
+
+  // Rehacer las capas de cada frame
+  satLayers.forEach(l=>satMap.removeLayer(l)); satLayers=[];
+  if(!ok.length){ // sin frames: usar la última disponible
+    satLayers=[L.tileLayer(goesUrl('default'),{maxNativeZoom:7,maxZoom:12,opacity:.8}).addTo(satMap)];
+    satTimes=['default']; $('satSlider').max=0; mostrarSatFrame(0); return;
+  }
+  satTimes=ok;
+  ok.forEach(ts=>satLayers.push(L.tileLayer(goesUrl(ts),{maxNativeZoom:7,maxZoom:12,opacity:0}).addTo(satMap)));
+  $('satSlider').max=satTimes.length-1;
+  mostrarSatFrame(satTimes.length-1);  // arrancar en la más reciente
 }
-function cerrarSat(){ $('satModal').classList.add('hidden'); }
+
+function mostrarSatFrame(i){
+  if(!satLayers.length) return;
+  satIdx=(i%satLayers.length+satLayers.length)%satLayers.length;
+  satLayers.forEach((l,k)=>l.setOpacity(k===satIdx?.8:0));
+  $('satSlider').value=satIdx;
+  const ts=satTimes[satIdx];
+  $('satTime').textContent = ts==='default' ? 'última' : new Date(ts).toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit',hour12:false});
+}
+function satPlayPause(){
+  if(satTimer){ clearInterval(satTimer); satTimer=null; $('satPlay').textContent='▶️'; return; }
+  if(satLayers.length<2) return;
+  $('satPlay').textContent='⏸️';
+  satTimer=setInterval(()=>mostrarSatFrame(satIdx+1), 700);
+}
+function cerrarSat(){
+  if(satTimer){ clearInterval(satTimer); satTimer=null; $('satPlay').textContent='▶️'; }
+  $('satModal').classList.add('hidden');
+}
 
 // ---------- Eventos ----------
 $('btnSearch').onclick=buscarCiudad;
@@ -1010,6 +1060,8 @@ $('btnFav').onclick=guardarFav;
 // Satélite
 $('btnSat').onclick=abrirSat;
 $('satClose').onclick=cerrarSat;
+$('satPlay').onclick=satPlayPause;
+$('satSlider').addEventListener('input',e=>mostrarSatFrame(+e.target.value));
 $('satModal').addEventListener('click',e=>{ if(e.target.id==='satModal') cerrarSat(); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrarSat(); });
 // Pop-up de detalle del día (clic en una tarjeta de día)
